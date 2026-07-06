@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sticky-notes"
+version = "0.1.0"
+description = "A sticky notes app for Linux"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6",
+    "python-xlib",
+]
+
+[project.scripts]
+sticky-notes = "sticky_notes.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sticky_notes"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
