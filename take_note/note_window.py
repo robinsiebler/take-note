@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QColor,
+    QDesktopServices,
     QFont,
     QGuiApplication,
     QKeySequence,
@@ -17,11 +18,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFontDialog,
     QHBoxLayout,
+    QInputDialog,
     QMenu,
     QMessageBox,
     QSizeGrip,
     QTextEdit,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
@@ -40,6 +43,14 @@ from .x11_wm import set_skip_taskbar, set_stays_on_top
 STANDALONE_FLAGS = Qt.Window | Qt.FramelessWindowHint
 HEADER_HEIGHT = 22
 RADIUS = 10
+
+# A deep navy rather than the conventional bright hyperlink blue: one of
+# our own SWATCHES is a pastel light blue, and bright blue text blends
+# into it. Checked via WCAG contrast ratio against every SWATCHES color —
+# this keeps a minimum of 5.5:1 (comfortably above the 4.5:1 AA
+# threshold) everywhere, not just against the backgrounds it happens to
+# clash with least.
+HYPERLINK_COLOR = "#1a237e"
 
 # How much darker the header strip is than the note's own color.
 # Needs to be dark enough that white icon glyphs (ICON_BUTTON_QSS below)
@@ -202,6 +213,39 @@ class NoteBody(QTextEdit):
         # the Delete/Backspace key path does.
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and not self.toPlainText():
             self.note_window._clear_empty_list_formatting()
+
+    def mouseMoveEvent(self, event):
+        # A plain QTextEdit (unlike QTextBrowser) has no built-in hyperlink
+        # affordance at all — no hand cursor, no click-to-open. Add the
+        # hover cursor here; opening on click is handled in
+        # mouseReleaseEvent (Ctrl+Click only, so a plain click can still
+        # place the cursor to edit link text without launching a browser).
+        # The tooltip exists because a plain click doing nothing was
+        # reported as confusing on its own — the hand cursor alone didn't
+        # communicate that Ctrl+Click is what's needed.
+        anchor = self.anchorAt(event.position().toPoint())
+        if anchor:
+            self.viewport().setCursor(Qt.PointingHandCursor)
+            # Deliberately not passing `self` as the optional widget arg
+            # here: QToolTip.showText() copies that widget's *palette*
+            # onto the tooltip when given, and a note body's palette
+            # reflects its own background-color — so the tip silently
+            # blended into whatever color the note happened to be.
+            # Confirmed via widget.grab() (screenshotting a real QToolTip
+            # window isn't reliable in this environment) that omitting it
+            # restores Qt's normal system tooltip styling.
+            tip = f"Ctrl+Click to open\nClick, then right-click to edit\n{anchor}"
+            QToolTip.showText(event.globalPosition().toPoint(), tip)
+        else:
+            self.viewport().setCursor(Qt.IBeamCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and event.modifiers() & Qt.ControlModifier:
+            anchor = self.anchorAt(event.position().toPoint())
+            if anchor:
+                QDesktopServices.openUrl(QUrl(anchor))
+        super().mouseReleaseEvent(event)
 
 
 class NoteWindow(QWidget):
@@ -389,6 +433,72 @@ class NoteWindow(QWidget):
         if ok:
             self.body.setCurrentFont(font)
             self.mark_changed()
+
+    def show_hyperlink_dialog(self):
+        cursor = self.body.textCursor()
+        existing_href = cursor.charFormat().anchorHref() if cursor.charFormat().isAnchor() else ""
+
+        if not cursor.hasSelection() and existing_href:
+            # Editing an existing link with just a caret (no selection):
+            # expand to the link's whole contiguous text span first, so
+            # the URL updates in place instead of inserting new text
+            # in the middle of it.
+            start, end = self._anchor_span(cursor.position(), existing_href)
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
+
+        # The static QInputDialog.getText() convenience defaults to a
+        # width too narrow to read/edit a typical URL comfortably —
+        # build the dialog directly so it can be sized explicitly.
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Edit Hyperlink" if existing_href else "Insert Hyperlink")
+        dialog.setLabelText("URL:")
+        dialog.setTextValue(existing_href or "https://")
+        dialog.resize(420, dialog.sizeHint().height())
+        if dialog.exec() != QInputDialog.Accepted:
+            return
+        url = dialog.textValue()
+        if not url:
+            return
+
+        fmt = QTextCharFormat()
+        fmt.setAnchor(True)
+        fmt.setAnchorHref(url)
+        fmt.setForeground(QColor(HYPERLINK_COLOR))
+        fmt.setFontUnderline(True)
+
+        if cursor.hasSelection():
+            cursor.mergeCharFormat(fmt)
+        else:
+            cursor.insertText(url, fmt)
+        self.mark_changed()
+
+    def _anchor_span(self, position: int, href: str) -> tuple[int, int]:
+        """The [start, end) character range of the contiguous run of text
+        around `position` that shares the given anchor href — found by
+        format continuity, not word boundaries, so a multi-word link
+        ("stories and poems") is treated as one span to edit or replace."""
+        doc = self.body.document()
+        probe = QTextCursor(doc)
+
+        start = position
+        while start > 0:
+            probe.setPosition(start - 1)
+            probe.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            if probe.charFormat().anchorHref() != href:
+                break
+            start -= 1
+
+        doc_len = doc.characterCount() - 1
+        end = position
+        while end < doc_len:
+            probe.setPosition(end)
+            probe.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            if probe.charFormat().anchorHref() != href:
+                break
+            end += 1
+
+        return start, end
 
     def _set_list_style(self, style: QTextListFormat.Style | None):
         cursor = self.body.textCursor()
@@ -764,6 +874,16 @@ class NoteWindow(QWidget):
 
         font_color_action = menu.addAction("Font Color…")
         font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
+
+        # Same "no selection, caret inside an existing link" check as
+        # show_hyperlink_dialog() itself — without this, the menu always
+        # read "Hyperlink…" even when right-clicking inside an existing
+        # link was actually going to edit it in place, giving no hint
+        # that the resulting dialog wouldn't just be inserting a new one.
+        cursor = self.body.textCursor()
+        is_editing_link = not cursor.hasSelection() and cursor.charFormat().isAnchor()
+        hyperlink_action = menu.addAction("Edit Hyperlink…" if is_editing_link else "Hyperlink…")
+        hyperlink_action.triggered.connect(self.show_hyperlink_dialog)
 
         bullets_menu = menu.addMenu("Bullets && Numbering")
         current_style = self._current_list_style()

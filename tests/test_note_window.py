@@ -1,8 +1,17 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QTimer, Qt
-from PySide6.QtGui import QFont, QKeyEvent, QTextCursor, QTextListFormat
-from PySide6.QtWidgets import QFontDialog, QMenu, QMessageBox, QToolButton
+import pytest
+from PySide6.QtCore import QEvent, QPointF, QTimer, Qt
+from PySide6.QtGui import (
+    QDesktopServices,
+    QFont,
+    QKeyEvent,
+    QMouseEvent,
+    QTextCharFormat,
+    QTextCursor,
+    QTextListFormat,
+)
+from PySide6.QtWidgets import QFontDialog, QInputDialog, QMenu, QMessageBox, QToolButton
 
 from take_note.models import Note
 from take_note.note_window import NoteWindow
@@ -306,6 +315,7 @@ def test_text_menu_excludes_whole_note_actions(qapp):
         "Font…",
         "Font Style",
         "Font Color…",
+        "Hyperlink…",
         "Bullets && Numbering",
         "Increase Indent",
         "Decrease Indent",
@@ -443,6 +453,234 @@ def test_qfontdialog_getfont_returns_ok_then_font(qapp):
 
     assert isinstance(result[0], bool)
     assert isinstance(result[1], QFont)
+
+
+def _patch_hyperlink_dialog(monkeypatch, text, accepted):
+    """show_hyperlink_dialog() builds a QInputDialog instance directly
+    (rather than the static getText() convenience) so it can be resized
+    wider than the cramped default — that means tests must patch exec()/
+    textValue() on the instance, not getText(), or they'd hang on a real,
+    un-mockable modal dialog. Confirmed QInputDialog.exec IS overridable
+    at the class level (it's a QDialog, same family as QMessageBox, unlike
+    QMenu.exec which silently isn't)."""
+    monkeypatch.setattr(
+        QInputDialog, "exec", lambda self: QInputDialog.Accepted if accepted else QInputDialog.Rejected
+    )
+    monkeypatch.setattr(QInputDialog, "textValue", lambda self: text)
+
+
+def test_hyperlink_dialog_applies_anchor_to_selection(qapp, monkeypatch):
+    win = make_note_window("Click here")
+    select_all(win)
+
+    _patch_hyperlink_dialog(monkeypatch, "https://example.com", True)
+    win.show_hyperlink_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    fmt = cursor.charFormat()
+    assert fmt.isAnchor()
+    assert fmt.anchorHref() == "https://example.com"
+    assert win.body.toPlainText() == "Click here"
+
+
+def test_hyperlink_dialog_no_selection_inserts_url_as_text(qapp, monkeypatch):
+    win = make_note_window("")
+    _patch_hyperlink_dialog(monkeypatch, "https://example.com", True)
+
+    win.show_hyperlink_dialog()
+
+    assert win.body.toPlainText() == "https://example.com"
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    assert cursor.charFormat().anchorHref() == "https://example.com"
+
+
+def test_hyperlink_dialog_cancelled_does_not_modify_text(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_hyperlink_dialog(monkeypatch, "https://example.com", False)
+
+    win.show_hyperlink_dialog()
+
+    assert win.body.toPlainText() == "Some text"
+
+
+def test_hyperlink_dialog_empty_url_does_not_modify_text(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_hyperlink_dialog(monkeypatch, "", True)
+
+    win.show_hyperlink_dialog()
+
+    assert win.body.toPlainText() == "Some text"
+
+
+def test_hyperlink_dialog_prefills_existing_url_for_editing(qapp, monkeypatch):
+    """Regression: editing an already-linked word used to always prompt
+    with a blank "https://" default instead of the link's current URL,
+    and inserted the new URL as fresh text splitting the link instead of
+    replacing it in place."""
+    win = make_note_window("Read my stories and poems today")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextWord)  # start of "stories"
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.EndOfWord, QTextCursor.KeepAnchor)  # "stories and poems"
+    win.body.setTextCursor(cursor)
+
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://old-example.com")
+    cursor.mergeCharFormat(fmt)
+
+    seen = {}
+
+    def fake_exec(self):
+        seen["prefilled"] = self.textValue()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+    monkeypatch.setattr(QInputDialog, "textValue", lambda self: "https://old-example.com")
+
+    # Caret with no selection, positioned inside the existing link.
+    caret = win.body.textCursor()
+    caret.setPosition(cursor.selectionStart() + 2)
+    win.body.setTextCursor(caret)
+
+    win.show_hyperlink_dialog()
+
+    assert seen["prefilled"] == "https://old-example.com"
+
+
+def test_context_menu_label_reads_edit_hyperlink_inside_existing_link(qapp):
+    """Regression: right-clicking with the caret inside an existing link
+    (no new selection) always showed "Hyperlink…" — identical to the
+    insert case — giving no hint that this invocation would edit the
+    link in place rather than create a new one."""
+    win = make_note_window("Read my stories and poems today")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextWord)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.EndOfWord, QTextCursor.KeepAnchor)
+    link_start = cursor.selectionStart()
+    win.body.setTextCursor(cursor)
+
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    cursor.mergeCharFormat(fmt)
+
+    # Caret with no selection, positioned inside the existing link.
+    caret = win.body.textCursor()
+    caret.setPosition(link_start + 2)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    titles = [a.text() for a in menu.actions()]
+    assert "Edit Hyperlink…" in titles
+    assert "Hyperlink…" not in titles
+
+
+def test_context_menu_label_reads_hyperlink_outside_any_link(qapp):
+    win = make_note_window("Just plain text")
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    titles = [a.text() for a in menu.actions()]
+    assert "Hyperlink…" in titles
+    assert "Edit Hyperlink…" not in titles
+
+
+def test_anchor_span_finds_full_contiguous_link_text(qapp):
+    win = make_note_window("Read my stories and poems today")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextWord)
+    start_pos = cursor.position()
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.EndOfWord, QTextCursor.KeepAnchor)
+    end_pos = cursor.position()
+    win.body.setTextCursor(cursor)
+
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    cursor.mergeCharFormat(fmt)
+
+    start, end = win._anchor_span(start_pos + 2, "https://example.com")
+    assert start == start_pos
+    assert end == end_pos
+
+
+def test_ctrl_click_on_link_opens_url(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    win.body.anchorAt = lambda pos: "https://example.com"
+    opened = {}
+    monkeypatch.setattr(
+        QDesktopServices, "openUrl", staticmethod(lambda url: opened.setdefault("url", url.toString()))
+    )
+
+    event = QMouseEvent(
+        QEvent.MouseButtonRelease, QPointF(5, 5), Qt.LeftButton, Qt.LeftButton, Qt.ControlModifier
+    )
+    win.body.mouseReleaseEvent(event)
+
+    assert opened["url"] == "https://example.com"
+
+
+def test_plain_click_on_link_does_not_open_url(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    win.body.anchorAt = lambda pos: "https://example.com"
+    opened = {}
+    monkeypatch.setattr(
+        QDesktopServices, "openUrl", staticmethod(lambda url: opened.setdefault("url", url.toString()))
+    )
+
+    event = QMouseEvent(
+        QEvent.MouseButtonRelease, QPointF(5, 5), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier
+    )
+    win.body.mouseReleaseEvent(event)
+
+    assert "url" not in opened
+
+
+def test_hyperlink_hover_tooltip_does_not_inherit_note_background(qapp):
+    """Regression: QToolTip.showText()'s optional widget arg copies that
+    widget's palette onto the tooltip — passing the note body (whose
+    palette reflects its own background-color stylesheet) made the
+    tooltip silently blend into the note's own color instead of
+    rendering as a normal tooltip, reported as unreadable on hover."""
+    if qapp.platformName() == "offscreen":
+        pytest.skip("QToolTip isn't rendered under the offscreen QPA platform")
+
+    from PySide6.QtGui import QPalette
+
+    win = make_note_window("Some text")
+    win.body.anchorAt = lambda pos: "https://example.com"
+
+    # QToolTip only actually displays for an active/raised window — not
+    # something a real hover needs, but required here to realize it
+    # synthetically.
+    win.activateWindow()
+    win.raise_()
+    for _ in range(10):
+        qapp.processEvents()
+
+    event = QMouseEvent(QEvent.MouseMove, QPointF(5, 5), Qt.NoButton, Qt.NoButton, Qt.NoModifier)
+    win.body.mouseMoveEvent(event)
+    for _ in range(10):
+        qapp.processEvents()
+
+    tooltip_widget = next(
+        (w for w in qapp.topLevelWidgets() if w.windowType() == Qt.ToolTip and w.isVisible()),
+        None,
+    )
+    assert tooltip_widget is not None
+    bg = tooltip_widget.palette().color(QPalette.ToolTipBase)
+    assert bg.name() != win.note.color
 
 
 def test_set_text_color_on_plain_text(qapp):

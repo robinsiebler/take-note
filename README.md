@@ -11,6 +11,11 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   picker (including black) for selected text, always-on-top (toggleable
   per note), adjustable transparency, freely movable and resizable,
   collapsible to just the header ("roll up"), persisted across restarts.
+  Hyperlinks: "Hyperlink…" turns the selection (or a typed URL) into a
+  clickable link, or edits an existing one in place (pre-filling its
+  current URL) if invoked with just the caret inside it rather than a
+  new selection — hover shows a hand cursor and tooltip, Ctrl+Click opens
+  it, a plain click still just places the cursor for editing.
 - Right-click the note body for text-formatting actions only; whole-note
   actions (color, transparency, always-on-top, Memoboard, delete) live in
   the header's right-click menu and the hamburger (☰) button instead.
@@ -59,9 +64,9 @@ Notes and boards are stored as a single JSON file at
 ## Roadmap / explicitly out of scope for v1
 
 **Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
-not part of the repo). Bullets & numbering, note transparency, and a font
-picker are done (see Features above); remaining:
-- Hyperlinks and embedded images in the note body
+not part of the repo). Bullets & numbering, note transparency, a font
+picker, and hyperlinks are done (see Features above); remaining:
+- Embedded images in the note body
 - In-note Find (Ctrl+F)
 - Lock note (disable editing)
 - Note title (Edit title, Ctrl+F2)
@@ -70,6 +75,9 @@ picker are done (see Features above); remaining:
 - "Stick a note to a window" — hide/show a note synced with another
   window's minimize/restore/close (whole-window granularity only;
   browser-tab-level isn't feasible on Linux — no clean per-tab signal)
+- Set the default new-note font to 12pt, black (currently just inherits
+  whatever Qt's system default font/color resolves to, unset by us)
+- Settings dialog: add an option to configure that default font size/color
 
 **Future / lower priority:**
 - Note list / search window ("Notes Browser")
@@ -83,6 +91,8 @@ picker are done (see Features above); remaining:
 - Spell check (would add a real dependency — hunspell/enchant)
 - Drag-and-drop of notes onto a Memoboard (currently a right-click "Add to
   Memoboard" menu action instead)
+- A manual test plan and test cases (structured checklist for exercising
+  the app by hand, distinct from the automated pytest suite)
 
 See [docs/PLAN.MD](docs/PLAN.MD) for the original pre-implementation design
 plan (historical reference; some details evolved during implementation).
