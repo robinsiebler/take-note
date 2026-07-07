@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
+    QFontDialog,
     QHBoxLayout,
     QMenu,
     QMessageBox,
@@ -360,6 +361,22 @@ class NoteWindow(QWidget):
         self.body.setAlignment(alignment)
         self.mark_changed()
 
+    def show_font_dialog(self):
+        """A real QFontDialog rather than embedding font-family/size combo
+        boxes directly in the context menu: those fought QMenu's own popup
+        handling (clicking the size dropdown closed the whole menu instead
+        of opening it) and needed constant manual re-styling just to match
+        the theme, since QMenu.setStyleSheet() doesn't cascade into
+        QWidgetAction-embedded widgets. A dialog sidesteps both problems
+        and covers family/size/weight/italic/underline in one place."""
+        # PySide6 returns (ok, font) here — the reverse of PyQt5's (font, ok)
+        # convention, confirmed by direct inspection; got this backwards on
+        # the first pass, which crashed setCurrentFont() with a bool.
+        ok, font = QFontDialog.getFont(self.body.currentFont(), self)
+        if ok:
+            self.body.setCurrentFont(font)
+            self.mark_changed()
+
     def _set_list_style(self, style: QTextListFormat.Style | None):
         cursor = self.body.textCursor()
         if not cursor.hasSelection():
@@ -704,6 +721,9 @@ class NoteWindow(QWidget):
         these act on the current selection, so whole-note actions like
         color/transparency/always-on-top/Memoboard/delete don't belong
         here (see populate_note_actions_menu)."""
+        font_action = menu.addAction("Font…")
+        font_action.triggered.connect(self.show_font_dialog)
+
         font_style_menu = menu.addMenu("Font Style")
         font_style_menu.addAction(self.bold_action)
         font_style_menu.addAction(self.italic_action)

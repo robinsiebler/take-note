@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QTimer, Qt
-from PySide6.QtGui import QKeyEvent, QTextCursor, QTextListFormat
-from PySide6.QtWidgets import QMenu, QMessageBox, QToolButton
+from PySide6.QtGui import QFont, QKeyEvent, QTextCursor, QTextListFormat
+from PySide6.QtWidgets import QFontDialog, QMenu, QMessageBox, QToolButton
 
 from take_note.models import Note
 from take_note.note_window import NoteWindow
@@ -245,6 +245,7 @@ def test_text_menu_excludes_whole_note_actions(qapp):
 
     titles = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert titles == [
+        "Font…",
         "Font Style",
         "Font Color…",
         "Bullets && Numbering",
@@ -323,6 +324,67 @@ def test_tab_key_outside_list_does_not_create_one(qapp):
     qapp.sendEvent(win.body, event)
 
     assert win.body.document().findBlockByNumber(0).textList() is None
+
+
+def test_show_font_dialog_applies_chosen_font(qapp, monkeypatch):
+    """Font family/size used to be picked via QComboBox/QFontComboBox
+    widgets embedded directly in the context menu, which fought QMenu's
+    own popup handling (clicking the size dropdown closed the whole menu
+    instead of opening it) and needed manual re-styling to avoid clashing
+    with the theme. Replaced with a real QFontDialog instead."""
+    win = make_note_window("Hello World")
+    select_all(win)
+    chosen_font = QFont("Monospace", 24)
+
+    # PySide6's real return order is (ok, font) — confirmed by direct
+    # inspection of QFontDialog.getFont(), not assumed; get this backwards
+    # here and the test would pass while the app crashes for real.
+    monkeypatch.setattr(QFontDialog, "getFont", staticmethod(lambda initial, parent: (True, chosen_font)))
+    win.show_font_dialog()
+
+    assert win.body.fontFamily() == "Monospace"
+    assert win.body.fontPointSize() == 24
+
+
+def test_show_font_dialog_cancelled_leaves_font_unchanged(qapp, monkeypatch):
+    win = make_note_window("Hello World")
+    select_all(win)
+    before_family = win.body.fontFamily()
+    before_size = win.body.fontPointSize()
+
+    monkeypatch.setattr(QFontDialog, "getFont", staticmethod(lambda initial, parent: (False, QFont())))
+    win.show_font_dialog()
+
+    assert win.body.fontFamily() == before_family
+    assert win.body.fontPointSize() == before_size
+
+
+def test_text_menu_has_font_dialog_action(qapp):
+    win = make_note_window("Some text")
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert titles[0] == "Font…"
+
+
+def test_qfontdialog_getfont_returns_ok_then_font(qapp):
+    """Contract check against the real API: PySide6 returns (ok, font)
+    from QFontDialog.getFont(), the reverse of PyQt5's (font, ok). Coding
+    against the wrong assumption crashed show_font_dialog() for real even
+    though a same-wrongly-ordered mock let a higher-level test pass — this
+    guards the assumption itself, not just our usage of it."""
+
+    def auto_accept():
+        for w in qapp.topLevelWidgets():
+            if isinstance(w, QFontDialog):
+                w.accept()
+
+    QTimer.singleShot(50, auto_accept)
+    result = QFontDialog.getFont(QFont("Sans", 10))
+
+    assert isinstance(result[0], bool)
+    assert isinstance(result[1], QFont)
 
 
 def test_set_text_color_on_plain_text(qapp):

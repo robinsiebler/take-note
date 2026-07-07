@@ -4,13 +4,13 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 
 ## Features
 
-- Colored sticky notes with rounded corners, rich text (bold/italic/
-  underline/strikethrough, alignment, bullets & numbering with indent/
-  dedent) via a right-click "Font Style"/"Bullets & Numbering" menu, plus
-  a "Font Color…" swatch picker (including black) for selected text,
-  always-on-top (toggleable per note), adjustable transparency, freely
-  movable and resizable, collapsible to just the header ("roll up"),
-  persisted across restarts.
+- Colored sticky notes with rounded corners, rich text (a "Font…" action
+  opens the native font-family/size/style dialog; plus quick bold/italic/
+  underline/strikethrough, alignment, and bullets & numbering with
+  indent/dedent via a right-click menu), plus a "Font Color…" swatch
+  picker (including black) for selected text, always-on-top (toggleable
+  per note), adjustable transparency, freely movable and resizable,
+  collapsible to just the header ("roll up"), persisted across restarts.
 - Right-click the note body for text-formatting actions only; whole-note
   actions (color, transparency, always-on-top, Memoboard, delete) live in
   the header's right-click menu and the hamburger (☰) button instead.
@@ -59,9 +59,8 @@ Notes and boards are stored as a single JSON file at
 ## Roadmap / explicitly out of scope for v1
 
 **Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
-not part of the repo). Bullets & numbering and note transparency are done
-(see Features above); remaining:
-- Font family / size pickers in the context menu
+not part of the repo). Bullets & numbering, note transparency, and a font
+picker are done (see Features above); remaining:
 - Hyperlinks and embedded images in the note body
 - In-note Find (Ctrl+F)
 - Lock note (disable editing)
