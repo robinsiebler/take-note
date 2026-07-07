@@ -6,8 +6,9 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 
 - Colored sticky notes with rounded corners, rich text (bold/italic/
   underline/strikethrough, alignment) via a right-click "Font Style" menu,
-  always-on-top (toggleable per note), freely movable and resizable,
-  collapsible to just the header ("roll up"), persisted across restarts.
+  plus a "Font Color…" swatch picker for selected text, always-on-top
+  (toggleable per note), freely movable and resizable, collapsible to just
+  the header ("roll up"), persisted across restarts.
 - System tray icon: create notes/boards, open Settings, quit.
 - Global hotkey (default `Ctrl+Alt+N`, user-configurable in Settings) to
   create a new note from anywhere.
@@ -51,11 +52,6 @@ Notes and boards are stored as a single JSON file at
 ```
 
 ## Roadmap / explicitly out of scope for v1
-
-**Planned (v2):**
-- Basic font/text color picker (selected-text color, matching the existing
-  swatch-grid style)
-- GitHub Actions CI workflow
 
 **Future / lower priority:**
 - Note list / search window

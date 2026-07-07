@@ -284,6 +284,28 @@ class NoteWindow(QWidget):
         self.body.setAlignment(alignment)
         self.mark_changed()
 
+    def _set_text_color(self, color: str):
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        self._merge_format(fmt)
+
+    def show_font_color_menu(self, anchor_widget: QWidget):
+        menu = QMenu(self)
+        menu.setStyleSheet(get_menu_qss())
+
+        grid_container = build_color_swatch_grid(
+            SWATCHES, self.body.textColor().name(), lambda c: self._pick_font_color(c, menu)
+        )
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(grid_container)
+        menu.addAction(action)
+
+        menu.exec(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
+
+    def _pick_font_color(self, color: str, menu: QMenu):
+        self._set_text_color(color)
+        menu.close()
+
     # -- color -----------------------------------------------------------
 
     def set_color(self, color_hex: str):
@@ -466,6 +488,9 @@ class NoteWindow(QWidget):
         font_style_menu.addAction(self.align_left_action)
         font_style_menu.addAction(self.align_center_action)
         font_style_menu.addAction(self.align_right_action)
+
+        font_color_action = menu.addAction("Font Color…")
+        font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
 
         menu.addSeparator()
         color_action = menu.addAction("Change Color…")
