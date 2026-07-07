@@ -19,6 +19,22 @@ def test_save_and_load_roundtrip(tmp_path):
     assert loaded_settings == settings
 
 
+def test_save_and_load_roundtrip_nondefault_opacity_and_rolled_up(tmp_path):
+    """The generic asdict()/from_dict() round-trip is only actually
+    exercised for a field's non-default value — at their defaults
+    (opacity=1.0, rolled_up=False), a broken (de)serialization of either
+    field could silently pass."""
+    path = tmp_path / "notes.json"
+    note = Note(id="note-1", opacity=0.55, rolled_up=True)
+
+    storage.save_all([note], [], Settings(), path=path)
+    loaded_notes, _, _ = storage.load_all(path=path)
+
+    assert loaded_notes == [note]
+    assert loaded_notes[0].opacity == 0.55
+    assert loaded_notes[0].rolled_up is True
+
+
 def test_load_missing_file_returns_empty(tmp_path):
     notes, boards, settings = storage.load_all(path=tmp_path / "nope.json")
     assert notes == []

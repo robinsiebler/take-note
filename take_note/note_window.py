@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QGuiApplication, QKeySequence, QTextCharFormat
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QColor,
+    QFont,
+    QGuiApplication,
+    QKeySequence,
+    QTextCharFormat,
+    QTextCursor,
+    QTextListFormat,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QMenu,
@@ -16,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from .models import SWATCHES, Note
+from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
 from .widgets import build_color_swatch_grid
 from .x11_wm import set_skip_taskbar, set_stays_on_top
 
@@ -122,7 +132,7 @@ class NoteHeader(QWidget):
         self.menu_btn.setText("☰")
         self.menu_btn.setAutoRaise(True)
         self.menu_btn.setToolTip("Note menu")
-        self.menu_btn.clicked.connect(lambda: note_window.show_color_menu(self.menu_btn))
+        self.menu_btn.clicked.connect(lambda: note_window.show_note_menu(self.menu_btn))
         layout.addWidget(self.menu_btn)
 
         close_btn = QToolButton()
@@ -161,11 +171,28 @@ class NoteBody(QTextEdit):
         self.note_window = note_window
 
     def contextMenuEvent(self, event):
+        # Only text-formatting actions here — whole-note actions (color,
+        # transparency, always-on-top, Memoboard, delete) don't make sense
+        # to offer while the user is mid-selection in the text, and live in
+        # the header's right-click menu / hamburger menu instead.
         menu = self.createStandardContextMenu()
         menu.setStyleSheet(get_menu_qss())
         menu.addSeparator()
-        self.note_window.populate_note_menu(menu)
+        self.note_window.populate_text_menu(menu)
         menu.exec(event.globalPos())
+
+    def keyPressEvent(self, event):
+        # Tab/Shift+Tab indent or dedent the current list item, matching
+        # standard word-processor behavior. Only intercepted while the
+        # cursor is actually in a list, so plain-text Tab (insert a tab
+        # character) is untouched elsewhere.
+        if event.key() in (Qt.Key_Tab, Qt.Key_Backtab) and self.textCursor().currentList():
+            if event.key() == Qt.Key_Backtab or event.modifiers() & Qt.ShiftModifier:
+                self.note_window._decrease_indent()
+            else:
+                self.note_window._increase_indent()
+            return
+        super().keyPressEvent(event)
 
 
 class NoteWindow(QWidget):
@@ -195,6 +222,7 @@ class NoteWindow(QWidget):
         self.resize(note.w, note.h)
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
+        self.setWindowOpacity(note.opacity)
         self.show()
         if parent_board is None:
             set_skip_taskbar(int(self.winId()), True)
@@ -215,6 +243,14 @@ class NoteWindow(QWidget):
 
         self.body = NoteBody(self)
         self.body.setFrameStyle(0)
+        # Qt's default indent step is 40px/level — reasonable in a full-size
+        # document but excessive in a note only ~140-220px wide, where two
+        # or three nested list levels would otherwise eat most of the width.
+        # 16px went too far the other way: Qt renders a list marker glyph
+        # ending flush at the indent boundary, so a marker wider than the
+        # step itself (confirmed for styles up to "viii.") overflows past
+        # the note's left edge instead of just being tight against it.
+        self.body.document().setIndentWidth(24)
         self.body.textChanged.connect(self.mark_changed)
         layout.addWidget(self.body, stretch=1)
 
@@ -256,6 +292,46 @@ class NoteWindow(QWidget):
         self.align_right_action = QAction("Right", self)
         self.align_right_action.triggered.connect(lambda: self._set_alignment(Qt.AlignRight))
 
+        # (style-or-None, label) pairs backing the Bullets & Numbering
+        # submenu. Kept as a table (not one-off actions) so populate_text_menu
+        # can look up which action matches the cursor's current list style
+        # and check it, giving the menu a visual indicator of the current
+        # state rather than requiring the user to infer it from the note body.
+        list_style_specs = [
+            (None, "None"),
+            (QTextListFormat.ListDisc, "• Bullets"),
+            (QTextListFormat.ListDecimal, "1, 2, 3"),
+            (QTextListFormat.ListLowerAlpha, "a, b, c"),
+            (QTextListFormat.ListUpperAlpha, "A, B, C"),
+            (QTextListFormat.ListLowerRoman, "i, ii, iii"),
+            (QTextListFormat.ListUpperRoman, "I, II, III"),
+        ]
+        self.list_style_group = QActionGroup(self)
+        self.list_style_group.setExclusive(True)
+        self.list_style_actions = []
+        for style, label in list_style_specs:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, s=style: self._set_list_style(s))
+            self.list_style_group.addAction(action)
+            self.list_style_actions.append((style, action))
+
+        self.increase_indent_action = QAction("Increase Indent", self)
+        self.increase_indent_action.triggered.connect(self._increase_indent)
+        self.decrease_indent_action = QAction("Decrease Indent", self)
+        self.decrease_indent_action.triggered.connect(self._decrease_indent)
+
+        self.opacity_group = QActionGroup(self)
+        self.opacity_group.setExclusive(True)
+        self.opacity_actions = []
+        for label, value in TRANSPARENCY_LEVELS:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(value == self.note.opacity)
+            action.triggered.connect(lambda checked=False, v=value: self.set_opacity(v))
+            self.opacity_group.addAction(action)
+            self.opacity_actions.append(action)
+
     def _merge_format(self, fmt: QTextCharFormat):
         self.body.mergeCurrentCharFormat(fmt)
 
@@ -284,17 +360,153 @@ class NoteWindow(QWidget):
         self.body.setAlignment(alignment)
         self.mark_changed()
 
+    def _set_list_style(self, style: QTextListFormat.Style | None):
+        cursor = self.body.textCursor()
+        if not cursor.hasSelection():
+            self._apply_list_style_to_block(cursor.block(), style)
+            self.mark_changed()
+            return
+
+        # A multi-line selection can span several distinct QTextList
+        # objects (each nesting depth created by indent/dedent is its own
+        # list) — cursor.currentList() only reflects the cursor's single
+        # active position, so applying a style change through it alone
+        # would silently skip every other list the selection touches.
+        doc = self.body.document()
+        start = min(cursor.selectionStart(), cursor.selectionEnd())
+        end = max(cursor.selectionStart(), cursor.selectionEnd())
+        block = doc.findBlock(start)
+        while block.isValid() and block.position() < end:
+            self._apply_list_style_to_block(block, style)
+            block = block.next()
+        self.mark_changed()
+
+    def _apply_list_style_to_block(self, block, style: QTextListFormat.Style | None):
+        current_list = block.textList()
+        if style is None:
+            if current_list is not None:
+                current_list.remove(block)
+        elif current_list is not None:
+            fmt = current_list.format()
+            fmt.setStyle(style)
+            current_list.setFormat(fmt)
+        else:
+            QTextCursor(block).createList(QTextListFormat.Style(style))
+
+    def _current_list_style(self) -> QTextListFormat.Style | None:
+        """The list style at the cursor, or None outside any list. Used to
+        put a checkmark on the matching Bullets & Numbering menu entry."""
+        current_list = self.body.textCursor().currentList()
+        return current_list.format().style() if current_list is not None else None
+
+    @staticmethod
+    def _find_adjacent_list(block, target_indent: int):
+        """Search backward through preceding blocks for the nearest list at
+        exactly `target_indent`, so indenting/dedenting a line rejoins an
+        adjacent sibling's (sub)list instead of always creating a new,
+        disconnected one that restarts numbering unexpectedly."""
+        b = block.previous()
+        while b.isValid():
+            lst = b.textList()
+            if lst is None:
+                return None
+            indent = lst.format().indent()
+            if indent == target_indent:
+                return lst
+            if indent < target_indent:
+                return None
+            b = b.previous()
+        return None
+
+    def _list_indent_step(self, delta: int):
+        cursor = self.body.textCursor()
+        current_list = cursor.currentList()
+        if current_list is None:
+            # Not in a list: a plain visual block indent (works for any
+            # paragraph, not just list items).
+            block_fmt = cursor.blockFormat()
+            block_fmt.setIndent(max(0, block_fmt.indent() + delta))
+            cursor.mergeBlockFormat(block_fmt)
+            self.mark_changed()
+            return
+
+        style = current_list.format().style()
+        new_indent = current_list.format().indent() + delta
+        block = cursor.block()
+
+        if new_indent < 1:
+            current_list.remove(block)
+            block_fmt = cursor.blockFormat()
+            block_fmt.setIndent(0)
+            cursor.mergeBlockFormat(block_fmt)
+            self.mark_changed()
+            return
+
+        target_list = self._find_adjacent_list(block, new_indent)
+        current_list.remove(block)
+        if target_list is not None:
+            target_list.add(block)
+        else:
+            fmt = QTextListFormat()
+            fmt.setStyle(style)
+            fmt.setIndent(new_indent)
+            cursor.createList(fmt)
+
+        # A block's own indent level (separate from the list's nesting
+        # depth) doesn't get resynced when rejoining an existing list via
+        # QTextList.add() — left stale, it visually narrows/widens the
+        # line independent of where it actually sits in the list nesting.
+        # Force it back in sync with the list depth explicitly.
+        block_fmt = cursor.blockFormat()
+        block_fmt.setIndent(new_indent - 1)
+        cursor.mergeBlockFormat(block_fmt)
+        self.mark_changed()
+
+    def _increase_indent(self):
+        self._list_indent_step(1)
+
+    def _decrease_indent(self):
+        self._list_indent_step(-1)
+
     def _set_text_color(self, color: str):
         fmt = QTextCharFormat()
         fmt.setForeground(QColor(color))
         self._merge_format(fmt)
+        # Automatic list markers (bullets/numbers) are painted using the
+        # block's own char format, not the per-character format that
+        # mergeCurrentCharFormat touches — without this, a list item's "1."
+        # stays the old color even after the item's text is recolored.
+        self._merge_block_format_over_selection(fmt)
+
+    def _merge_block_format_over_selection(self, fmt: QTextCharFormat):
+        """mergeBlockCharFormat on a selection that ends exactly at
+        EndOfBlock (e.g. selecting one line's text, not crossing into the
+        next block) corrupts that list item's cached layout rect in Qt,
+        making it stop painting entirely. Selecting through each block's
+        trailing separator instead (its full `block.length()`, not just
+        its visible text) avoids that — reproduced and confirmed via a
+        minimal QTextEdit case before landing this fix."""
+        selection_cursor = self.body.textCursor()
+        if not selection_cursor.hasSelection():
+            selection_cursor.mergeBlockCharFormat(fmt)
+            return
+        doc = self.body.document()
+        start = min(selection_cursor.selectionStart(), selection_cursor.selectionEnd())
+        end = max(selection_cursor.selectionStart(), selection_cursor.selectionEnd())
+        block = doc.findBlock(start)
+        while block.isValid() and block.position() < end:
+            block_cursor = QTextCursor(block)
+            block_end = min(block.position() + block.length(), doc.characterCount() - 1)
+            block_cursor.setPosition(block_end, QTextCursor.KeepAnchor)
+            block_cursor.mergeBlockCharFormat(fmt)
+            block = block.next()
 
     def show_font_color_menu(self, anchor_widget: QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_qss())
 
         grid_container = build_color_swatch_grid(
-            SWATCHES, self.body.textColor().name(), lambda c: self._pick_font_color(c, menu)
+            FONT_SWATCHES, self.body.textColor().name(), lambda c: self._pick_font_color(c, menu)
         )
         action = QWidgetAction(menu)
         action.setDefaultWidget(grid_container)
@@ -355,10 +567,6 @@ class NoteWindow(QWidget):
         action.setDefaultWidget(grid_container)
         menu.addAction(action)
 
-        menu.addSeparator()
-        delete_action = menu.addAction("Delete Note")
-        delete_action.triggered.connect(self.confirm_delete)
-
         menu.exec(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
 
     def _pick_color(self, color: str, menu: QMenu):
@@ -379,6 +587,13 @@ class NoteWindow(QWidget):
             # A live re-toggle needs a direct EWMH state change, not
             # setWindowFlags() — see x11_wm.set_stays_on_top for why.
             set_stays_on_top(int(self.winId()), checked)
+        self.mark_changed()
+
+    # -- transparency ------------------------------------------------------
+
+    def set_opacity(self, value: float):
+        self.note.opacity = value
+        self.setWindowOpacity(value)
         self.mark_changed()
 
     # -- roll up / down ----------------------------------------------------
@@ -468,17 +683,27 @@ class NoteWindow(QWidget):
     # -- context menu / delete --------------------------------------------
 
     def contextMenuEvent(self, event):
+        # Right-clicking the header is about the note as a whole (there's
+        # no text selection here), so it gets the same whole-note actions
+        # as the hamburger menu rather than text-formatting options.
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_qss())
-        self.populate_note_menu(menu)
+        self.populate_note_actions_menu(menu)
         menu.exec(event.globalPos())
 
-    def populate_note_menu(self, menu: QMenu):
-        """Builds the note-level menu contents (formatting, color,
-        always-on-top, Memoboard, delete). Shared by NoteWindow's own
-        contextMenuEvent (right-click on the header) and NoteBody's
-        (right-click in the text, appended after the standard Undo/Cut/
-        Copy/Paste menu) so both surfaces offer the same options."""
+    def show_note_menu(self, anchor_widget: QWidget):
+        menu = QMenu(self)
+        menu.setStyleSheet(get_menu_qss())
+        self.populate_note_actions_menu(menu)
+        menu.exec(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
+
+    def populate_text_menu(self, menu: QMenu):
+        """Text-formatting actions (font style/color, bullets & numbering,
+        indent). Used only by NoteBody's contextMenuEvent (right-click in
+        the text, appended after the standard Undo/Cut/Copy/Paste menu) —
+        these act on the current selection, so whole-note actions like
+        color/transparency/always-on-top/Memoboard/delete don't belong
+        here (see populate_note_actions_menu)."""
         font_style_menu = menu.addMenu("Font Style")
         font_style_menu.addAction(self.bold_action)
         font_style_menu.addAction(self.italic_action)
@@ -492,9 +717,27 @@ class NoteWindow(QWidget):
         font_color_action = menu.addAction("Font Color…")
         font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
 
-        menu.addSeparator()
-        color_action = menu.addAction("Change Color…")
+        bullets_menu = menu.addMenu("Bullets && Numbering")
+        current_style = self._current_list_style()
+        for style, action in self.list_style_actions:
+            action.setChecked(style == current_style)
+            bullets_menu.addAction(action)
+
+        menu.addAction(self.increase_indent_action)
+        menu.addAction(self.decrease_indent_action)
+
+    def populate_note_actions_menu(self, menu: QMenu):
+        """Whole-note actions (color, transparency, always-on-top,
+        Memoboard membership, delete). Used by the header's right-click
+        menu and the hamburger (☰) button's dropdown — these apply to the
+        note as a whole, not to a text selection, so they're kept out of
+        the body's text-formatting menu (see populate_text_menu)."""
+        color_action = menu.addAction("Change Note Color…")
         color_action.triggered.connect(lambda: self.show_color_menu(self))
+
+        transparency_menu = menu.addMenu("Note Transparency")
+        for action in self.opacity_actions:
+            transparency_menu.addAction(action)
 
         aot_action = menu.addAction("Always on Top")
         aot_action.setCheckable(True)
@@ -527,11 +770,16 @@ class NoteWindow(QWidget):
         delete_action.triggered.connect(self.confirm_delete)
 
     def confirm_delete(self):
-        reply = QMessageBox.question(
-            self,
-            "Delete Note",
-            "Delete this note permanently?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
+        # A plain child dialog doesn't reliably outrank this note's own
+        # raw EWMH "always on top" state in KWin's stacking layers (that
+        # hint elevates by window layer, not just parent/child order) —
+        # force the dialog on top too so it can't end up hidden behind an
+        # always-on-top note.
+        box = QMessageBox(self)
+        box.setWindowTitle("Delete Note")
+        box.setText("Delete this note permanently?")
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setWindowFlags(box.windowFlags() | Qt.WindowStaysOnTopHint)
+        reply = box.exec()
         if reply == QMessageBox.Yes:
             self.manager.delete_note(self)

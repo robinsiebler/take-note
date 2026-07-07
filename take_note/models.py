@@ -26,6 +26,29 @@ SWATCHES = [
 DEFAULT_COLOR = SWATCHES[0]
 DEFAULT_HOTKEY = "Ctrl+Alt+N"
 
+# Separate, darker palette for text color: the pastel SWATCHES above read
+# poorly as font color against the (also pastel) note backgrounds.
+FONT_SWATCHES = [
+    "#000000",  # black
+    "#5d4037",  # dark brown
+    "#c62828",  # dark red
+    "#2e7d32",  # dark green
+    "#1565c0",  # dark blue
+    "#6a1b9a",  # dark purple
+    "#e65100",  # dark orange
+]
+
+# Named transparency presets, mapped to a QWidget.setWindowOpacity() value.
+# "Full" stops short of 0 so the note stays visible/clickable rather than
+# vanishing entirely.
+TRANSPARENCY_LEVELS = [
+    ("None", 1.0),
+    ("Low", 0.85),
+    ("Medium", 0.70),
+    ("High", 0.55),
+    ("Full", 0.40),
+]
+
 
 @dataclass
 class Note:
@@ -38,6 +61,7 @@ class Note:
     h: int = 220
     always_on_top: bool = True
     rolled_up: bool = False
+    opacity: float = 1.0
     board_id: str | None = None
     created_at: str = field(default_factory=_now_iso)
     modified_at: str = field(default_factory=_now_iso)
