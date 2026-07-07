@@ -18,6 +18,11 @@ def main():
     from .app import NoteManager
 
     app = QApplication(sys.argv)
+    # Explicit, unique applicationName drives WM_CLASS — important since a
+    # generic name is what caused KWin's task switcher to confuse our icon
+    # with an unrelated, similarly-named "Sticky Notes" Flatpak app.
+    app.setApplicationName("take-note")
+    app.setApplicationDisplayName("Take Note!")
     manager = NoteManager(app)
     manager.load_from_disk()
 

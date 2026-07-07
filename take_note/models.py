@@ -24,6 +24,7 @@ SWATCHES = [
     "#eeeeee",  # grey/white
 ]
 DEFAULT_COLOR = SWATCHES[0]
+DEFAULT_HOTKEY = "Ctrl+Alt+N"
 
 
 @dataclass
@@ -67,5 +68,21 @@ class Board:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Board":
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+
+@dataclass
+class Settings:
+    default_color: str = DEFAULT_COLOR
+    default_always_on_top: bool = True
+    launch_at_login: bool = False
+    hotkey: str = DEFAULT_HOTKEY
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Settings":
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})

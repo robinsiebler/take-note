@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCharFormat
+from PySide6.QtGui import QAction, QColor, QFont, QGuiApplication, QKeySequence, QTextCharFormat
 from PySide6.QtWidgets import (
-    QGridLayout,
     QHBoxLayout,
     QMenu,
     QMessageBox,
@@ -18,8 +17,16 @@ from PySide6.QtWidgets import (
 )
 
 from .models import SWATCHES, Note
+from .widgets import build_color_swatch_grid
+from .x11_wm import set_skip_taskbar, set_stays_on_top
 
-STANDALONE_FLAGS = Qt.Tool | Qt.FramelessWindowHint
+# Qt.Window (Normal type), not Qt.Tool (Utility type): KWin keeps
+# Utility-type windows in an elevated stacking layer above Normal windows
+# regardless of state hints (confirmed via _NET_CLIENT_LIST_STACKING),
+# which broke a genuinely optional Always-on-Top toggle. Normal type has no
+# such inherent elevation, so taskbar/pager hiding is done explicitly via
+# set_skip_taskbar() instead of relying on the window type for it.
+STANDALONE_FLAGS = Qt.Window | Qt.FramelessWindowHint
 HEADER_HEIGHT = 22
 RADIUS = 10
 
@@ -42,17 +49,37 @@ QToolButton:hover { background-color: rgba(255, 255, 255, 50); border-radius: 4p
 QToolButton:checked { background-color: rgba(255, 255, 255, 80); border-radius: 4px; }
 """
 
-# Any QMenu we build (context menus, the color picker) needs this — once an
-# app sets a stylesheet anywhere, Qt stops giving unstyled QMenus native
-# theme integration, so without explicit colors they render low-contrast
-# against a dark desktop theme and genuinely-enabled items look disabled.
-MENU_QSS = """
+# Any QMenu we build (context menus, the color picker) needs one of these —
+# once an app sets a stylesheet anywhere, Qt stops giving unstyled QMenus
+# native theme integration, so without explicit colors they render
+# low-contrast against the desktop theme and genuinely-enabled items look
+# disabled. Unlike the note's own color chrome (always hard-coded, never
+# theme-dependent), menus should match the system light/dark scheme.
+MENU_QSS_DARK = """
 QMenu { background-color: #3a3a3a; color: white; border: 1px solid #5a5a5a; padding: 4px; }
 QMenu::item { padding: 4px 24px 4px 12px; border-radius: 4px; }
 QMenu::item:selected { background-color: #5a5a5a; }
 QMenu::item:disabled { color: #888888; }
 QMenu::separator { height: 1px; background: #5a5a5a; margin: 4px 8px; }
 """
+
+MENU_QSS_LIGHT = """
+QMenu { background-color: #fafafa; color: #202020; border: 1px solid #c0c0c0; padding: 4px; }
+QMenu::item { padding: 4px 24px 4px 12px; border-radius: 4px; }
+QMenu::item:selected { background-color: #dcdcdc; }
+QMenu::item:disabled { color: #a0a0a0; }
+QMenu::separator { height: 1px; background: #c0c0c0; margin: 4px 8px; }
+"""
+
+
+def get_menu_qss() -> str:
+    """Picks a menu stylesheet matching the system color scheme. Falls back
+    to dark for Qt.ColorScheme.Unknown (older platform theme plugins that
+    can't report a scheme) since that's the tested, known-good default."""
+    scheme = QGuiApplication.styleHints().colorScheme()
+    if scheme == Qt.ColorScheme.Light:
+        return MENU_QSS_LIGHT
+    return MENU_QSS_DARK
 
 
 def _now_iso() -> str:
@@ -135,7 +162,7 @@ class NoteBody(QTextEdit):
 
     def contextMenuEvent(self, event):
         menu = self.createStandardContextMenu()
-        menu.setStyleSheet(MENU_QSS)
+        menu.setStyleSheet(get_menu_qss())
         menu.addSeparator()
         self.note_window.populate_note_menu(menu)
         menu.exec(event.globalPos())
@@ -169,6 +196,8 @@ class NoteWindow(QWidget):
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
         self.show()
+        if parent_board is None:
+            set_skip_taskbar(int(self.winId()), True)
         if note.rolled_up:
             self._set_rolled(True, persist=False)
         else:
@@ -295,29 +324,11 @@ class NoteWindow(QWidget):
 
     def show_color_menu(self, anchor_widget: QWidget):
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_QSS)
+        menu.setStyleSheet(get_menu_qss())
 
-        grid_container = QWidget()
-        grid = QGridLayout(grid_container)
-        grid.setContentsMargins(4, 4, 4, 4)
-        grid.setSpacing(6)
-        columns = 4
-        for i, color in enumerate(SWATCHES):
-            swatch_btn = QToolButton()
-            swatch_btn.setFixedSize(26, 26)
-            selected = color.lower() == self.note.color.lower()
-            border = "2px solid white" if selected else "2px solid transparent"
-            text_color = "white" if selected else "transparent"
-            swatch_btn.setText("✓" if selected else "")
-            swatch_btn.setStyleSheet(
-                f"QToolButton {{ background-color: {color}; border-radius: 13px; "
-                f"border: {border}; color: {text_color}; font-weight: bold; }}"
-            )
-            swatch_btn.clicked.connect(
-                lambda checked=False, c=color, m=menu: self._pick_color(c, m)
-            )
-            grid.addWidget(swatch_btn, i // columns, i % columns)
-
+        grid_container = build_color_swatch_grid(
+            SWATCHES, self.note.color, lambda c: self._pick_color(c, menu)
+        )
         action = QWidgetAction(menu)
         action.setDefaultWidget(grid_container)
         menu.addAction(action)
@@ -343,8 +354,9 @@ class NoteWindow(QWidget):
     def set_always_on_top(self, checked: bool):
         self.note.always_on_top = checked
         if self.note.board_id is None:
-            self._apply_standalone_flags()
-            self.show()
+            # A live re-toggle needs a direct EWMH state change, not
+            # setWindowFlags() — see x11_wm.set_stays_on_top for why.
+            set_stays_on_top(int(self.winId()), checked)
         self.mark_changed()
 
     # -- roll up / down ----------------------------------------------------
@@ -392,6 +404,12 @@ class NoteWindow(QWidget):
             if pos is not None:
                 self.move(pos)
             self.show()
+            # Reparenting recreates the native window, same as a fresh
+            # construction — reapply both via direct state messages rather
+            # than trusting the flags alone (see set_stays_on_top's docstring).
+            win_id = int(self.winId())
+            set_skip_taskbar(win_id, True)
+            set_stays_on_top(win_id, self.note.always_on_top)
             self.note.board_id = None
         self.mark_changed()
 
@@ -429,7 +447,7 @@ class NoteWindow(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_QSS)
+        menu.setStyleSheet(get_menu_qss())
         self.populate_note_menu(menu)
         menu.exec(event.globalPos())
 

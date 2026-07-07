@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .models import Board
-from .note_window import ICON_BUTTON_QSS, MENU_QSS, RADIUS, header_shade
+from .note_window import ICON_BUTTON_QSS, RADIUS, get_menu_qss, header_shade
 
 HEADER_HEIGHT = 24
 
@@ -80,7 +80,7 @@ class BoardCanvas(QWidget):
     def contextMenuEvent(self, event):
         board_window = self.board_window
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_QSS)
+        menu.setStyleSheet(get_menu_qss())
 
         new_note_action = menu.addAction("New Note on this Board")
         new_note_action.triggered.connect(

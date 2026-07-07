@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sticky-notes"
+name = "take-note"
 version = "0.1.0"
-description = "A sticky notes app for Linux"
+description = "Take Note! - a sticky notes app for Linux"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6",
@@ -13,10 +13,10 @@ dependencies = [
 ]
 
 [project.scripts]
-sticky-notes = "sticky_notes.__main__:main"
+take-note = "take_note.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sticky_notes"]
+packages = ["take_note"]
 
 [dependency-groups]
 dev = [

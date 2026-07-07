@@ -5,11 +5,12 @@ import logging
 from PySide6.QtCore import QObject, QPoint, QTimer
 from PySide6.QtWidgets import QApplication
 
-from . import storage
+from . import autostart, storage
 from .board_window import MemoboardWindow
-from .hotkey import HotkeyListener
+from .hotkey import HotkeyListener, parse_shortcut
 from .models import Board, Note
 from .note_window import NoteWindow
+from .settings_dialog import SettingsDialog
 from .tray import TrayIcon
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,11 @@ class NoteManager(QObject):
         self.notes: dict[str, NoteWindow] = {}
         self.boards: dict[str, MemoboardWindow] = {}
 
+        # Settings must be known before the hotkey listener is created, so
+        # read them here; load_from_disk() re-reads (along with notes/boards)
+        # shortly after, keeping self.settings as the single source of truth.
+        _, _, self.settings = storage.load_all()
+
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(SAVE_DEBOUNCE_MS)
@@ -37,10 +43,8 @@ class NoteManager(QObject):
         self.tray = TrayIcon(self)
         self.tray.show()
 
-        self.hotkey = HotkeyListener()
-        self.hotkey.triggered.connect(lambda: self.create_note())
-        self.hotkey.grab_failed.connect(self._on_hotkey_failed)
-        self.hotkey.start()
+        self.hotkey: HotkeyListener | None = None
+        self._start_hotkey_listener()
 
         self.app.setQuitOnLastWindowClosed(False)
         self.app.aboutToQuit.connect(self._on_about_to_quit)
@@ -48,7 +52,8 @@ class NoteManager(QObject):
     # -- startup -------------------------------------------------------
 
     def load_from_disk(self):
-        notes, boards = storage.load_all()
+        notes, boards, settings = storage.load_all()
+        self.settings = settings
 
         # Boards first so each note's board canvas already exists by the
         # time a note with a board_id needs to be parented into it.
@@ -75,7 +80,10 @@ class NoteManager(QObject):
     # -- notes -----------------------------------------------------------
 
     def create_note(self, board: MemoboardWindow | None = None, pos: QPoint | None = None) -> NoteWindow:
-        note = Note()
+        note = Note(
+            color=self.settings.default_color,
+            always_on_top=self.settings.default_always_on_top,
+        )
         if board is not None:
             note.board_id = board.board.id
             note.x, note.y = (pos.x(), pos.y()) if pos is not None else (20, 20)
@@ -126,6 +134,42 @@ class NoteManager(QObject):
         board_window.deleteLater()
         self._schedule_save()
 
+    # -- settings ------------------------------------------------------
+
+    def open_settings(self):
+        # Reflect the real filesystem state rather than trusting a
+        # persisted flag that could drift if the autostart file was added
+        # or removed outside the app.
+        self.settings.launch_at_login = autostart.is_enabled()
+
+        dialog = SettingsDialog(self.settings)
+        if dialog.exec():
+            new_settings = dialog.result_settings()
+            hotkey_changed = new_settings.hotkey != self.settings.hotkey
+            self.settings = new_settings
+
+            if new_settings.launch_at_login:
+                autostart.enable()
+            else:
+                autostart.disable()
+
+            if hotkey_changed:
+                self._restart_hotkey_listener()
+
+            self._schedule_save()
+
+    def _start_hotkey_listener(self):
+        key, modifiers = parse_shortcut(self.settings.hotkey)
+        self.hotkey = HotkeyListener(key, modifiers)
+        self.hotkey.triggered.connect(lambda: self.create_note())
+        self.hotkey.grab_failed.connect(self._on_hotkey_failed)
+        self.hotkey.start()
+
+    def _restart_hotkey_listener(self):
+        if self.hotkey is not None:
+            self.hotkey.stop()
+        self._start_hotkey_listener()
+
     # -- persistence -------------------------------------------------------
 
     def _schedule_save(self):
@@ -134,7 +178,7 @@ class NoteManager(QObject):
     def _save_now(self):
         notes = [nw.sync_model() for nw in self.notes.values()]
         boards = [bw.sync_model() for bw in self.boards.values()]
-        storage.save_all(notes, boards)
+        storage.save_all(notes, boards, self.settings)
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -142,7 +186,8 @@ class NoteManager(QObject):
         logger.warning("Global hotkey could not be registered (combo may already be in use)")
 
     def _on_about_to_quit(self):
-        self.hotkey.stop()
+        if self.hotkey is not None:
+            self.hotkey.stop()
         self._save_timer.stop()
         self._save_now()
 
