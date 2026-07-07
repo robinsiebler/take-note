@@ -194,6 +194,14 @@ class NoteBody(QTextEdit):
                 self.note_window._increase_indent()
             return
         super().keyPressEvent(event)
+        # Deleting a whole multi-item list (e.g. Select All + Delete) merges
+        # everything down to one empty block, but Qt's merge keeps that
+        # block's list membership/indent from whichever original block
+        # survived — leaving a stray bullet/number floating in an otherwise
+        # blank note. removeSelectedText() doesn't have this problem; only
+        # the Delete/Backspace key path does.
+        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and not self.toPlainText():
+            self.note_window._clear_empty_list_formatting()
 
 
 class NoteWindow(QWidget):
@@ -249,9 +257,14 @@ class NoteWindow(QWidget):
         # or three nested list levels would otherwise eat most of the width.
         # 16px went too far the other way: Qt renders a list marker glyph
         # ending flush at the indent boundary, so a marker wider than the
-        # step itself (confirmed for styles up to "viii.") overflows past
-        # the note's left edge instead of just being tight against it.
-        self.body.document().setIndentWidth(24)
+        # step itself overflows past the note's left edge instead of just
+        # being tight against it. A prior fix to 24px was measured against
+        # the *offscreen* QPA platform's generic fallback font rather than
+        # xcb's real one (KDE's theme-integrated "Noto Sans"), which is
+        # visibly wider — "viii." needs ~33px there, not ~19px. 36px
+        # covers that under the real font with a few px to spare, while
+        # still well below Qt's default.
+        self.body.document().setIndentWidth(36)
         self.body.textChanged.connect(self.mark_changed)
         layout.addWidget(self.body, stretch=1)
 
@@ -415,6 +428,21 @@ class NoteWindow(QWidget):
         put a checkmark on the matching Bullets & Numbering menu entry."""
         current_list = self.body.textCursor().currentList()
         return current_list.format().style() if current_list is not None else None
+
+    def _clear_empty_list_formatting(self):
+        """Called after Delete/Backspace leaves the note completely empty.
+        Strips any list membership and indent the surviving empty block
+        kept from before the deletion, so an emptied note is truly blank
+        rather than showing a stray bullet/number."""
+        cursor = self.body.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        current_list = cursor.currentList()
+        if current_list is not None:
+            current_list.remove(cursor.block())
+        block_fmt = cursor.blockFormat()
+        if block_fmt.indent() != 0:
+            block_fmt.setIndent(0)
+            cursor.mergeBlockFormat(block_fmt)
 
     @staticmethod
     def _find_adjacent_list(block, target_indent: int):

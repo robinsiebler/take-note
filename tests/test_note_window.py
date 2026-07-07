@@ -145,6 +145,64 @@ def test_decrease_indent_below_top_level_removes_list(qapp):
     assert block.blockFormat().indent() == 0
 
 
+def test_delete_key_on_full_selection_leaves_no_stray_list_formatting(qapp):
+    """Regression: Select All + Delete on a note with a multi-level list
+    merges everything down to one empty block, but Qt's Delete-key path
+    (unlike QTextCursor.removeSelectedText()) keeps that block's list
+    membership/indent from whichever original block survived — reported
+    as a stray bullet/number floating in an otherwise blank note."""
+    win = make_note_window("Fix Dinner\nGrate Cheese")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListLowerAlpha)
+    goto_block(win, 1)
+    win._increase_indent()
+    win._increase_indent()
+
+    select_all(win)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+
+    block = win.body.document().findBlockByNumber(0)
+    assert win.body.toPlainText() == ""
+    assert block.textList() is None
+    assert block.blockFormat().indent() == 0
+
+
+def test_backspace_key_on_full_selection_leaves_no_stray_list_formatting(qapp):
+    win = make_note_window("Item one")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    select_all(win)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+
+    block = win.body.document().findBlockByNumber(0)
+    assert win.body.toPlainText() == ""
+    assert block.textList() is None
+    assert block.blockFormat().indent() == 0
+
+
+def test_delete_key_on_partial_selection_keeps_list_intact(qapp):
+    """The empty-note cleanup must only fire when the whole document is
+    actually empty — deleting one item's text while another item still
+    has content shouldn't strip list formatting."""
+    win = make_note_window("Item one\nItem two")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    win.body.setTextCursor(cursor)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+
+    assert win.body.toPlainText() != ""
+    block = win.body.document().findBlockByNumber(0)
+    assert block.textList() is not None
+
+
 def test_set_text_color_recolors_list_marker_without_corrupting_layout(qapp):
     """Regression: mergeBlockCharFormat on a selection ending exactly at
     EndOfBlock (not crossing into the next block) corrupted that list
