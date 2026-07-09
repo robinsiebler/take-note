@@ -408,6 +408,48 @@ def test_tab_key_outside_list_does_not_create_one(qapp):
     assert win.body.document().findBlockByNumber(0).textList() is None
 
 
+def test_new_empty_note_defaults_to_12pt_black_font(qapp):
+    """Left unset, the first character typed into a brand-new note used
+    to pick up whatever Qt's system default font/palette happened to
+    resolve to (varies by machine — observed as "Noto Sans" ~16pt with an
+    unset/palette-default text color on the reporting system)."""
+    win = make_note_window("")
+
+    win.body.insertPlainText("Hello")
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.fontPointSize() == 12
+    assert fmt.foreground().color().name() == "#000000"
+
+
+def test_default_new_note_format_not_applied_to_note_loaded_with_content(qapp, monkeypatch):
+    """A note loaded from disk with real content keeps whatever formatting
+    it already has — the 12pt/black default is only for a genuinely empty,
+    brand-new note."""
+    calls = []
+    monkeypatch.setattr(
+        NoteWindow, "_apply_default_new_note_format", lambda self: calls.append(1)
+    )
+
+    NoteWindow(Note(html="<p>Existing content</p>"), manager=FakeManager())
+
+    assert calls == []
+
+
+def test_default_new_note_format_applied_to_genuinely_empty_note(qapp, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        NoteWindow, "_apply_default_new_note_format", lambda self: calls.append(1)
+    )
+
+    NoteWindow(Note(html=""), manager=FakeManager())
+
+    assert calls == [1]
+
+
 def test_show_font_dialog_applies_chosen_font(qapp, monkeypatch):
     """Font family/size used to be picked via QComboBox/QFontComboBox
     widgets embedded directly in the context menu, which fought QMenu's
