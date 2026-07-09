@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from take_note.models import Note, Settings
-from take_note.note_window import NoteWindow
+from take_note.note_window import NoteWindow, find_bar_tint
 
 
 class FakeManager:
@@ -1282,6 +1282,19 @@ def test_find_action_disabled_after_deleting_all_text(qapp):
     win.body.setPlainText("")
 
     assert win.find_action.isEnabled() is False
+
+
+def test_find_bar_background_tints_toward_note_color(qapp):
+    win = make_note_window("Some text")
+    assert find_bar_tint(win.note.color) in win.find_bar.styleSheet()
+
+
+def test_find_bar_tint_updates_when_note_color_changes(qapp):
+    win = make_note_window("Some text")
+
+    win.set_color("#90caf9")
+
+    assert find_bar_tint("#90caf9") in win.find_bar.styleSheet()
 
 
 def test_toggle_find_bar_does_nothing_on_empty_note(qapp):

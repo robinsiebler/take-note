@@ -74,6 +74,23 @@ def header_shade(color_hex: str) -> str:
     return QColor(color_hex).darker(HEADER_DARKEN).name()
 
 
+# How much of the note's own color shows through the find bar's
+# background, blended toward white — mocked up at 55%/35% against yellow/
+# blue/pink and picked by the user; a flat use of note.color (100%) would
+# be too saturated for FIND_BAR_QSS's fixed dark text/icon colors to stay
+# comfortably legible against every SWATCHES entry.
+FIND_BAR_TINT_RATIO = 0.55
+
+
+def find_bar_tint(color_hex: str, ratio: float = FIND_BAR_TINT_RATIO) -> str:
+    color = QColor(color_hex)
+    white = QColor(255, 255, 255)
+    r = int(color.red() * ratio + white.red() * (1 - ratio))
+    g = int(color.green() * ratio + white.green() * (1 - ratio))
+    b = int(color.blue() * ratio + white.blue() * (1 - ratio))
+    return QColor(r, g, b).name()
+
+
 #  Amber rather than white for the locked state — distinct at a glance from
 #  the unlocked icon (plain white, matching every other header icon) and
 #  reads as a "restricted" cue, not just a state swap. Picked over red/
@@ -436,25 +453,18 @@ class NoteFindBar(QWidget):
     toggled by Ctrl+F / the text context menu's Find… action. Non-modal
     (rather than a dialog, unlike Hyperlink/Font) so the user can keep
     searching and see each match selected/scrolled into view in the note
-    without losing focus on the text underneath. Deliberately styled with
-    a fixed light background rather than the header/footer's note-color
-    shading — it needs to stay readable against every note color and
-    every desktop theme, not match either."""
+    without losing focus on the text underneath. Background is a tint of
+    the note's own color (see find_bar_tint) rather than an exact match —
+    FIND_BAR_QSS's fixed dark text/icon colors need to stay legible
+    against every note color, which a full-strength match wouldn't
+    guarantee the way header_shade's darkening does for the header."""
 
     def __init__(self, note_window: "NoteWindow"):
         super().__init__()
         self.note_window = note_window
         self.setObjectName("findbar")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        # Bare (selector-less) declarations don't mix reliably with the
-        # class-selector rules in FIND_BAR_QSS in the same stylesheet
-        # string — matches every other multi-rule stylesheet in this file
-        # (e.g. the header's "#header { ... }" + ICON_BUTTON_QSS) by
-        # scoping the bar's own background to its object name instead.
-        self.setStyleSheet(
-            "#findbar { background-color: #f0f0f0; border-bottom: 1px solid #c0c0c0; }"
-            + FIND_BAR_QSS
-        )
+        self.apply_color(note_window.note.color)
         self.hide()
 
         layout = QHBoxLayout(self)
@@ -488,6 +498,18 @@ class NoteFindBar(QWidget):
         close_btn.setToolTip("Close (Esc)")
         close_btn.clicked.connect(self.close_bar)
         layout.addWidget(close_btn)
+
+    def apply_color(self, color_hex: str):
+        # Bare (selector-less) declarations don't mix reliably with the
+        # class-selector rules in FIND_BAR_QSS in the same stylesheet
+        # string — matches every other multi-rule stylesheet in this file
+        # (e.g. the header's "#header { ... }" + ICON_BUTTON_QSS) by
+        # scoping the bar's own background to its object name instead.
+        self.setStyleSheet(
+            f"#findbar {{ background-color: {find_bar_tint(color_hex)}; "
+            f"border-bottom: 1px solid {header_shade(color_hex)}; }}"
+            + FIND_BAR_QSS
+        )
 
     def open_bar(self):
         self.show()
@@ -1163,6 +1185,7 @@ class NoteWindow(QWidget):
         header_color = header_shade(self.note.color)
         self._update_header_style(header_color)
         self.title_bar.apply_color(self.note.color)
+        self.find_bar.apply_color(self.note.color)
         self.footer.setStyleSheet(
             f"#footer {{ background-color: {self.note.color}; "
             f"border-bottom-left-radius: {RADIUS}px; border-bottom-right-radius: {RADIUS}px; }}"
