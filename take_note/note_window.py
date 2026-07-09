@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QTextCharFormat,
     QTextCursor,
+    QTextDocument,
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QFontDialog,
     QHBoxLayout,
     QInputDialog,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QSizeGrip,
@@ -72,6 +74,18 @@ ICON_BUTTON_QSS = """
 QToolButton { color: white; border: none; background: transparent; padding: 2px; }
 QToolButton:hover { background-color: rgba(255, 255, 255, 50); border-radius: 4px; }
 QToolButton:checked { background-color: rgba(255, 255, 255, 80); border-radius: 4px; }
+"""
+
+# The find bar's own background is a fixed light color regardless of note
+# color or desktop theme (see NoteFindBar's docstring), so its field text
+# and button glyphs need matching fixed dark colors too — left to inherit
+# the app's ambient palette (which can itself be dark), the field text and
+# ▲▼× glyphs rendered nearly invisible against the light bar.
+FIND_BAR_QSS = """
+QLineEdit { background-color: white; color: #202020; border: 1px solid #b0b0b0; border-radius: 3px; padding: 2px 4px; }
+QToolButton { color: #202020; border: none; background: transparent; padding: 2px; }
+QToolButton:hover { background-color: rgba(0, 0, 0, 30); border-radius: 4px; }
+QToolButton:disabled { color: #a0a0a0; }
 """
 
 # Any QMenu we build (context menus, the color picker) needs one of these —
@@ -290,6 +304,129 @@ class NoteBody(QTextEdit):
         super().mouseReleaseEvent(event)
 
 
+class _FindLineEdit(QLineEdit):
+    """Plain QLineEdit has no signal for Escape — needed so the find bar
+    can be dismissed from the keyboard without reaching for the mouse."""
+
+    escapePressed = Signal()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.escapePressed.emit()
+            return
+        super().keyPressEvent(event)
+
+
+class NoteFindBar(QWidget):
+    """Inline, non-modal find bar shown between the header and body,
+    toggled by Ctrl+F / the text context menu's Find… action. Non-modal
+    (rather than a dialog, unlike Hyperlink/Font) so the user can keep
+    searching and see each match selected/scrolled into view in the note
+    without losing focus on the text underneath. Deliberately styled with
+    a fixed light background rather than the header/footer's note-color
+    shading — it needs to stay readable against every note color and
+    every desktop theme, not match either."""
+
+    def __init__(self, note_window: "NoteWindow"):
+        super().__init__()
+        self.note_window = note_window
+        self.setObjectName("findbar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        # Bare (selector-less) declarations don't mix reliably with the
+        # class-selector rules in FIND_BAR_QSS in the same stylesheet
+        # string — matches every other multi-rule stylesheet in this file
+        # (e.g. the header's "#header { ... }" + ICON_BUTTON_QSS) by
+        # scoping the bar's own background to its object name instead.
+        self.setStyleSheet(
+            "#findbar { background-color: #f0f0f0; border-bottom: 1px solid #c0c0c0; }"
+            + FIND_BAR_QSS
+        )
+        self.hide()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(2)
+
+        self.field = _FindLineEdit()
+        self.field.setPlaceholderText("Find…")
+        self.field.textChanged.connect(self._find_from_start)
+        self.field.returnPressed.connect(self.find_next)
+        self.field.escapePressed.connect(self.close_bar)
+        layout.addWidget(self.field, stretch=1)
+
+        prev_btn = QToolButton()
+        prev_btn.setText("▲")
+        prev_btn.setAutoRaise(True)
+        prev_btn.setToolTip("Previous match")
+        prev_btn.clicked.connect(self.find_previous)
+        layout.addWidget(prev_btn)
+
+        next_btn = QToolButton()
+        next_btn.setText("▼")
+        next_btn.setAutoRaise(True)
+        next_btn.setToolTip("Next match")
+        next_btn.clicked.connect(self.find_next)
+        layout.addWidget(next_btn)
+
+        close_btn = QToolButton()
+        close_btn.setText("×")
+        close_btn.setAutoRaise(True)
+        close_btn.setToolTip("Close (Esc)")
+        close_btn.clicked.connect(self.close_bar)
+        layout.addWidget(close_btn)
+
+    def open_bar(self):
+        self.show()
+        self.field.selectAll()
+        self.field.setFocus()
+        if self.field.text():
+            self._find_from_start()
+
+    def close_bar(self):
+        self.hide()
+        self.note_window.body.setFocus()
+
+    def find_next(self):
+        self._perform_find(backward=False)
+
+    def find_previous(self):
+        self._perform_find(backward=True)
+
+    def _find_from_start(self):
+        self._perform_find(backward=False, from_start=True)
+
+    def _perform_find(self, backward: bool, from_start: bool = False):
+        text = self.field.text()
+        body = self.note_window.body
+        if not text:
+            self._set_not_found(False)
+            return
+
+        document = body.document()
+        options = QTextDocument.FindBackward if backward else QTextDocument.FindFlags()
+        cursor = QTextCursor(document) if from_start else body.textCursor()
+        found = document.find(text, cursor, options)
+
+        if found.isNull():
+            # Wrap around: retry from the far end of the document rather
+            # than reporting no match just because the search started
+            # partway through.
+            wrap_cursor = QTextCursor(document)
+            if backward:
+                wrap_cursor.movePosition(QTextCursor.End)
+            found = document.find(text, wrap_cursor, options)
+
+        if found.isNull():
+            self._set_not_found(True)
+        else:
+            self._set_not_found(False)
+            body.setTextCursor(found)
+            body.ensureCursorVisible()
+
+    def _set_not_found(self, not_found: bool):
+        self.field.setStyleSheet("background-color: #ffcdd2;" if not_found else "")
+
+
 class NoteWindow(QWidget):
     changed = Signal()
 
@@ -336,6 +473,9 @@ class NoteWindow(QWidget):
         self.header = NoteHeader(self)
         layout.addWidget(self.header)
 
+        self.find_bar = NoteFindBar(self)
+        layout.addWidget(self.find_bar)
+
         self.body = NoteBody(self)
         self.body.setFrameStyle(0)
         # Qt's default indent step is 40px/level — reasonable in a full-size
@@ -352,6 +492,7 @@ class NoteWindow(QWidget):
         # still well below Qt's default.
         self.body.document().setIndentWidth(36)
         self.body.textChanged.connect(self.mark_changed)
+        self.body.textChanged.connect(self._update_find_action_enabled)
         layout.addWidget(self.body, stretch=1)
 
         self.footer = QWidget()
@@ -385,6 +526,13 @@ class NoteWindow(QWidget):
         self.strikethrough_action = make_action(
             "Strikethrough", "Ctrl+K", self._toggle_strikethrough
         )
+
+        self.find_action = make_action("Find…", "Ctrl+F", self.toggle_find_bar)
+        # Disabled until there's something to search — matches its initial
+        # state here (the body is still empty at this point in __init__;
+        # _build_ui's textChanged connection keeps it in sync afterward).
+        self.find_action.setEnabled(bool(self.body.toPlainText()))
+
         self.align_left_action = QAction("Left", self)
         self.align_left_action.triggered.connect(lambda: self._set_alignment(Qt.AlignLeft))
         self.align_center_action = QAction("Center", self)
@@ -431,6 +579,17 @@ class NoteWindow(QWidget):
             action.triggered.connect(lambda checked=False, v=value: self.set_opacity(v))
             self.opacity_group.addAction(action)
             self.opacity_actions.append(action)
+
+    def toggle_find_bar(self):
+        # find_action.setEnabled() already keeps this out of reach from the
+        # menu/shortcut for an empty note; guarded again here as a direct
+        # safety net against calling this method itself.
+        if not self.body.toPlainText():
+            return
+        self.find_bar.open_bar()
+
+    def _update_find_action_enabled(self):
+        self.find_action.setEnabled(bool(self.body.toPlainText()))
 
     def _merge_format(self, fmt: QTextCharFormat):
         self.body.mergeCurrentCharFormat(fmt)
@@ -1034,6 +1193,8 @@ class NoteWindow(QWidget):
 
             menu.addAction(self.increase_indent_action)
             menu.addAction(self.decrease_indent_action)
+
+        menu.addAction(self.find_action)
 
     def populate_note_actions_menu(self, menu: QMenu):
         """Whole-note actions (color, transparency, always-on-top,

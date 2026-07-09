@@ -29,6 +29,14 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark
   theme; note colors themselves stay as you set them regardless of theme.
+- Embedded images: right-click → "Add picture…" (or "Replace picture…"
+  when one is already selected) inserts a picture inline, persisted
+  directly in the note's saved HTML so it survives a restart. The note
+  grows in width and height to fit the picture rather than shrinking it,
+  capped at the screen's available size.
+- In-note Find (Ctrl+F, or the context menu's "Find…" — disabled on an
+  empty note): a small non-modal find bar with Next/Previous and
+  wrap-around search.
 
 ## Setup
 
@@ -65,9 +73,8 @@ Notes and boards are stored as a single JSON file at
 
 **Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
 not part of the repo). Bullets & numbering, note transparency, a font
-picker, and hyperlinks are done (see Features above); remaining:
-- Embedded images in the note body
-- In-note Find (Ctrl+F)
+picker, hyperlinks, embedded images, and in-note Find are done (see
+Features above); remaining:
 - Lock note (disable editing)
 - Note title (Edit title, Ctrl+F2)
 - Bulk tray actions: Show all notes, Hide all notes, Roll up/down notes,

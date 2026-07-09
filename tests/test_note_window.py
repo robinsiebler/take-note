@@ -329,6 +329,7 @@ def test_text_menu_excludes_whole_note_actions(qapp):
         "Bullets && Numbering",
         "Increase Indent",
         "Decrease Indent",
+        "Find…",
     ]
 
 
@@ -984,7 +985,7 @@ def test_text_menu_hides_font_bullets_indent_for_image_selection(qapp):
     win.populate_text_menu(menu)
 
     titles = [a.text() for a in menu.actions() if not a.isSeparator()]
-    assert titles == ["Replace picture…", "Hyperlink…"]
+    assert titles == ["Replace picture…", "Hyperlink…", "Find…"]
 
 
 def test_text_menu_keeps_all_items_for_plain_text_selection(qapp):
@@ -1005,6 +1006,7 @@ def test_text_menu_keeps_all_items_for_plain_text_selection(qapp):
         "Bullets && Numbering",
         "Increase Indent",
         "Decrease Indent",
+        "Find…",
     ]
 
 
@@ -1076,3 +1078,131 @@ def test_toggle_rolled_collapses_and_expands(qapp):
     win.toggle_rolled()
     assert win.note.rolled_up is False
     assert not win.body.isHidden()
+
+
+def test_find_action_disabled_when_note_empty(qapp):
+    win = make_note_window("")
+    assert win.find_action.isEnabled() is False
+
+
+def test_find_action_enabled_when_note_has_text(qapp):
+    win = make_note_window("Some text")
+    assert win.find_action.isEnabled() is True
+
+
+def test_find_action_disabled_after_deleting_all_text(qapp):
+    """The requirement (per user): Find must only be enabled while the note
+    actually has text — re-checked live, not just at construction."""
+    win = make_note_window("Some text")
+    assert win.find_action.isEnabled() is True
+
+    win.body.setPlainText("")
+
+    assert win.find_action.isEnabled() is False
+
+
+def test_toggle_find_bar_does_nothing_on_empty_note(qapp):
+    win = make_note_window("")
+    win.toggle_find_bar()
+    assert win.find_bar.isHidden()
+
+
+def test_toggle_find_bar_shows_and_focuses_field(qapp):
+    win = make_note_window("Some text")
+
+    win.toggle_find_bar()
+
+    assert not win.find_bar.isHidden()
+    win.activateWindow()
+    for _ in range(5):
+        qapp.processEvents()
+    assert win.find_bar.field.hasFocus()
+
+
+def test_find_selects_first_match_as_you_type(qapp):
+    win = make_note_window("alpha beta alpha")
+
+    win.find_bar.field.setText("beta")
+
+    cursor = win.body.textCursor()
+    assert cursor.selectedText() == "beta"
+
+
+def test_find_next_advances_to_subsequent_match(qapp):
+    win = make_note_window("alpha beta alpha")
+    win.find_bar.field.setText("alpha")
+    first_start = win.body.textCursor().selectionStart()
+
+    win.find_bar.find_next()
+
+    cursor = win.body.textCursor()
+    assert cursor.selectedText() == "alpha"
+    assert cursor.selectionStart() > first_start
+
+
+def test_find_next_wraps_around_to_first_match(qapp):
+    win = make_note_window("alpha beta alpha")
+    win.find_bar.field.setText("alpha")
+    win.find_bar.find_next()  # now on the second "alpha"
+
+    win.find_bar.find_next()  # should wrap back around
+
+    assert win.body.textCursor().selectionStart() == 0
+
+
+def test_find_previous_wraps_around_to_last_match(qapp):
+    win = make_note_window("alpha beta alpha")
+    win.find_bar.field.setText("alpha")  # lands on the first match
+
+    win.find_bar.find_previous()
+
+    cursor = win.body.textCursor()
+    assert cursor.selectedText() == "alpha"
+    assert cursor.selectionStart() > 0
+
+
+def test_find_sets_not_found_style_for_missing_text(qapp):
+    win = make_note_window("alpha beta")
+
+    win.find_bar.field.setText("zzz")
+
+    assert "ffcdd2" in win.find_bar.field.styleSheet()
+
+
+def test_find_clears_not_found_style_once_a_match_resumes(qapp):
+    win = make_note_window("alpha beta")
+    win.find_bar.field.setText("zzz")
+    assert "ffcdd2" in win.find_bar.field.styleSheet()
+
+    win.find_bar.field.setText("alpha")
+
+    assert win.find_bar.field.styleSheet() == ""
+
+
+def test_close_bar_hides_and_refocuses_body(qapp):
+    win = make_note_window("Some text")
+    win.toggle_find_bar()
+    assert not win.find_bar.isHidden()
+
+    win.find_bar.close_bar()
+
+    assert win.find_bar.isHidden()
+    win.activateWindow()
+    for _ in range(5):
+        qapp.processEvents()
+    assert win.body.hasFocus()
+
+
+def test_escape_key_in_find_field_closes_bar(qapp):
+    win = make_note_window("Some text")
+    win.toggle_find_bar()
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+    qapp.sendEvent(win.find_bar.field, event)
+
+    assert win.find_bar.isHidden()
+
+
+def test_find_action_has_ctrl_f_shortcut(qapp):
+    win = make_note_window("Some text")
+    assert win.find_action.shortcut().toString() == "Ctrl+F"
