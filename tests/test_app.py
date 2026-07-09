@@ -76,3 +76,24 @@ def test_toggle_roll_all_notes_rolls_up_when_all_expanded():
 
     for note_window in manager.notes.values():
         note_window.set_rolled.assert_called_once_with(True)
+
+
+def test_delete_note_clears_its_window_watcher():
+    """A note stuck to another window (see window_watch.WindowWatcher)
+    must have that watcher thread stopped on delete, or it leaks."""
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+
+    NoteManager.delete_note(manager, note_window)
+
+    note_window._clear_window_watcher.assert_called_once()
+
+
+def test_on_about_to_quit_clears_every_notes_window_watcher():
+    manager = _fake_manager([False, True])
+    manager.hotkey = None
+
+    NoteManager._on_about_to_quit(manager)
+
+    for note_window in manager.notes.values():
+        note_window._clear_window_watcher.assert_called_once()

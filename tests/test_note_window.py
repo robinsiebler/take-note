@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QDesktopServices,
@@ -345,6 +345,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
         "Note Transparency",
         "Always on Top",
         "Lock Note",
+        "Stick to Window…",
         "Add to Notepad",
         "Delete Note",
     ]
@@ -1436,6 +1437,166 @@ def test_find_action_stays_enabled_while_note_is_locked(qapp):
     win.set_locked(True)
 
     assert win.find_action.isEnabled() is True
+
+
+class _FakeWindowWatcher(QObject):
+    """Stands in for the real WindowWatcher (a QThread that opens its own
+    X11 connection) — matches this project's existing precedent for
+    hotkey.HotkeyListener, whose actual X11 interaction also isn't unit
+    tested, only its pure-logic helpers are. Signals are emitted manually
+    in tests rather than by a real minimize/restore/close."""
+
+    minimized = Signal()
+    restored = Signal()
+    closed = Signal()
+
+    def __init__(self, window_id, parent=None):
+        super().__init__(parent)
+        self.window_id = window_id
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+
+def _patch_window_watcher(monkeypatch, iconic=False):
+    monkeypatch.setattr("take_note.note_window.WindowWatcher", _FakeWindowWatcher)
+    monkeypatch.setattr("take_note.note_window.is_window_iconic", lambda window_id: iconic)
+
+
+def test_set_stuck_to_window_hides_note_if_already_iconic(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch, iconic=True)
+    win = make_note_window("Some text")
+
+    win.set_stuck_to_window(12345)
+
+    assert win._stuck_window_id == 12345
+    assert win.isHidden()
+
+
+def test_set_stuck_to_window_does_not_hide_note_if_not_iconic(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch, iconic=False)
+    win = make_note_window("Some text")
+
+    win.set_stuck_to_window(12345)
+
+    assert not win.isHidden()
+
+
+def test_window_watcher_minimized_signal_hides_note(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(12345)
+
+    win._window_watcher.minimized.emit()
+
+    assert win.isHidden()
+
+
+def test_window_watcher_restored_signal_shows_note(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(12345)
+    win.hide()
+
+    win._window_watcher.restored.emit()
+
+    assert not win.isHidden()
+
+
+def test_window_watcher_closed_signal_unsticks_and_shows_note(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(12345)
+    win.hide()
+
+    win._window_watcher.closed.emit()
+
+    assert win._stuck_window_id is None
+    assert not win.isHidden()
+
+
+def test_unstick_from_window_stops_watcher_and_shows_note(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(12345)
+    watcher = win._window_watcher
+
+    win.unstick_from_window()
+
+    assert watcher.stopped is True
+    assert win._stuck_window_id is None
+    assert not win.isHidden()
+
+
+def test_sticking_to_new_window_stops_previous_watcher(qapp, monkeypatch):
+    """Regression guard: re-sticking (without unsticking first) must not
+    leak the previous WindowWatcher thread."""
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(111)
+    first_watcher = win._window_watcher
+
+    win.set_stuck_to_window(222)
+
+    assert first_watcher.stopped is True
+    assert win._stuck_window_id == 222
+
+
+def test_note_actions_menu_shows_unstick_when_stuck(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    win = make_note_window("Some text")
+    win.set_stuck_to_window(12345)
+
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "Unstick from Window" in titles
+    assert "Stick to Window…" not in titles
+
+
+def test_show_stick_window_dialog_no_windows_shows_message(qapp, monkeypatch):
+    monkeypatch.setattr("take_note.note_window.list_windows", lambda: [])
+    informed = {}
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: informed.setdefault("called", True))
+    )
+    win = make_note_window("Some text")
+
+    win.show_stick_window_dialog()
+
+    assert informed.get("called") is True
+    assert win._stuck_window_id is None
+
+
+def test_show_stick_window_dialog_picks_selected_window(qapp, monkeypatch):
+    _patch_window_watcher(monkeypatch)
+    monkeypatch.setattr(
+        "take_note.note_window.list_windows", lambda: [(111, "Firefox"), (222, "Terminal")]
+    )
+    monkeypatch.setattr(
+        QInputDialog, "getItem", staticmethod(lambda *a, **k: ("Terminal (0x%x)" % 222, True))
+    )
+    win = make_note_window("Some text")
+
+    win.show_stick_window_dialog()
+
+    assert win._stuck_window_id == 222
+
+
+def test_show_stick_window_dialog_cancelled_does_not_stick(qapp, monkeypatch):
+    monkeypatch.setattr("take_note.note_window.list_windows", lambda: [(111, "Firefox")])
+    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("", False)))
+    win = make_note_window("Some text")
+
+    win.show_stick_window_dialog()
+
+    assert win._stuck_window_id is None
 
 
 def test_header_lock_button_reflects_initial_unlocked_state(qapp):

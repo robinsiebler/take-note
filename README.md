@@ -66,6 +66,16 @@ This works reliably on KDE Plasma (X11 or Wayland-with-XWayland). If you're on
 a compositor that doesn't run XWayland, window positioning and the global
 hotkey (which also uses X11's `XGrabKey`) won't work.
 
+The same boundary limits "Stick to Window": its window picker (`_NET_CLIENT_LIST`)
+only sees X11/XWayland clients. A native Wayland app (e.g. a browser launched
+with `--ozone-platform=wayland`, or many modern Electron apps) is invisible to
+it — Wayland's security model doesn't let one client enumerate another's
+windows, and there's no bridge back to X11 for them. Getting those apps to
+list would need either the *other* app to run through XWayland itself, or a
+compositor-specific extension (e.g. a KWin Script + D-Bus bridge) — not
+pursued, since that would only work on KDE/KWin and add real fragility for a
+single feature.
+
 ## Data
 
 Notes and boards are stored as a single JSON file at

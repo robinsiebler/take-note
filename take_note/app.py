@@ -94,6 +94,7 @@ class NoteManager(QObject):
         return note_window
 
     def delete_note(self, note_window: NoteWindow):
+        note_window._clear_window_watcher()
         self.notes.pop(note_window.note.id, None)
         note_window.setParent(None)
         note_window.deleteLater()
@@ -214,6 +215,8 @@ class NoteManager(QObject):
     def _on_about_to_quit(self):
         if self.hotkey is not None:
             self.hotkey.stop()
+        for note_window in self.notes.values():
+            note_window._clear_window_watcher()
         self._save_timer.stop()
         self._save_now()
 

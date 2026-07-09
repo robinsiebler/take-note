@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
 from .widgets import build_color_swatch_grid
+from .window_watch import WindowWatcher, is_window_iconic, list_windows
 from .x11_wm import set_skip_taskbar, set_stays_on_top
 
 # Qt.Window (Normal type), not Qt.Tool (Utility type): KWin keeps
@@ -591,6 +592,11 @@ class NoteWindow(QWidget):
         super().__init__(parent_board.canvas if parent_board is not None else None)
         self.note = note
         self.manager = manager
+        # Not persisted (see set_stuck_to_window's docstring) — always
+        # unset at construction, whether this is a brand-new note or one
+        # freshly loaded from disk.
+        self._stuck_window_id: int | None = None
+        self._window_watcher = None
 
         if parent_board is None:
             self._apply_standalone_flags()
@@ -1226,6 +1232,79 @@ class NoteWindow(QWidget):
         if persist:
             self.mark_changed()
 
+    # -- stick to window -----------------------------------------------------
+
+    # Shown in both the picker and the "nothing found" dialog — most users
+    # won't have read the README's "Known limitation: Wayland" section
+    # explaining why a native Wayland app (e.g. a browser started with
+    # --ozone-platform=wayland) never shows up here.
+    _STICK_WINDOW_SCOPE_NOTE = (
+        "(Only X11/XWayland windows appear here — native Wayland\n"
+        "apps, like some browsers, won't show up.)"
+    )
+
+    def show_stick_window_dialog(self):
+        windows = list_windows()
+        if not windows:
+            QMessageBox.information(
+                self,
+                "Stick to Window",
+                "No other windows were found to stick this note to.\n\n"
+                + self._STICK_WINDOW_SCOPE_NOTE,
+            )
+            return
+
+        # Window titles aren't guaranteed unique, and QInputDialog.getItem()
+        # only gives back the chosen string — appending each window's id
+        # (already unique by definition) keeps that round trip unambiguous
+        # without needing a custom list widget just to carry an id per row.
+        labels = [f"{title} (0x{window_id:x})" for window_id, title in windows]
+        label, ok = QInputDialog.getItem(
+            self,
+            "Stick to Window",
+            "Window:\n" + self._STICK_WINDOW_SCOPE_NOTE,
+            labels,
+            editable=False,
+        )
+        if not ok:
+            return
+        index = labels.index(label)
+        window_id = windows[index][0]
+        self.set_stuck_to_window(window_id)
+
+    def set_stuck_to_window(self, window_id: int):
+        """Not persisted in the Note model: an X11 window id is only valid
+        for as long as that specific window instance exists, and isn't
+        stable across the target app's own restarts, let alone ours — a
+        stuck association is a live, in-session thing only."""
+        self._clear_window_watcher()
+        self._stuck_window_id = window_id
+
+        self._window_watcher = WindowWatcher(window_id, self)
+        self._window_watcher.minimized.connect(self.hide)
+        self._window_watcher.restored.connect(self.show)
+        self._window_watcher.closed.connect(self.unstick_from_window)
+        self._window_watcher.start()
+
+        # WindowWatcher's signals only fire on *future* state changes —
+        # without this, sticking to a window that's already minimized
+        # would leave the note visible until some unrelated later toggle.
+        if is_window_iconic(window_id):
+            self.hide()
+
+        self.mark_changed()
+
+    def unstick_from_window(self):
+        self._clear_window_watcher()
+        self._stuck_window_id = None
+        self.show()
+        self.mark_changed()
+
+    def _clear_window_watcher(self):
+        if self._window_watcher is not None:
+            self._window_watcher.stop()
+            self._window_watcher = None
+
     # -- transparency ------------------------------------------------------
 
     def set_opacity(self, value: float):
@@ -1440,6 +1519,13 @@ class NoteWindow(QWidget):
         lock_action.setCheckable(True)
         lock_action.setChecked(self.note.locked)
         lock_action.toggled.connect(self.set_locked)
+
+        if self._stuck_window_id is not None:
+            stick_action = menu.addAction("Unstick from Window")
+            stick_action.triggered.connect(self.unstick_from_window)
+        else:
+            stick_action = menu.addAction("Stick to Window…")
+            stick_action.triggered.connect(self.show_stick_window_dialog)
 
         menu.addSeparator()
         if self.note.board_id is None:
