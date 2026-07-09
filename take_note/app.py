@@ -99,6 +99,32 @@ class NoteManager(QObject):
         note_window.deleteLater()
         self._schedule_save()
 
+    # -- bulk note actions (tray menu) ------------------------------------
+
+    def show_all_notes(self):
+        for note_window in self.notes.values():
+            note_window.show()
+
+    def hide_all_notes(self):
+        # Deliberately not persisted (no Note field for it) — this is a
+        # quick, session-only declutter, not a state a note should still
+        # be in unexpectedly after the next restart.
+        for note_window in self.notes.values():
+            note_window.hide()
+
+    def bring_all_notes_to_front(self):
+        for note_window in self.notes.values():
+            note_window.raise_()
+
+    def toggle_roll_all_notes(self):
+        """Rolls every note up if any are currently expanded, otherwise
+        expands them all — one consistent end state for the whole batch,
+        rather than flipping each note's own individual state independently
+        (which would leave them just as mixed as before, only swapped)."""
+        any_expanded = any(not nw.note.rolled_up for nw in self.notes.values())
+        for note_window in self.notes.values():
+            note_window.set_rolled(any_expanded)
+
     # -- boards ----------------------------------------------------------
 
     def create_board(self, name: str = "Notepad") -> NotepadWindow:

@@ -41,6 +41,12 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   text-formatting context menu collapses to just Find…, and Ctrl+B/I/U/K
   stop working too, so a locked note can't be edited from the keyboard
   either.
+- Note title (hamburger ☰ menu's first item, or Ctrl+F2): shows as a bold
+  line above the note body, only when set.
+- Tray menu bulk actions: Bring Notes on Top, Show All Notes, Hide All
+  Notes, and Roll Up/Down Notes (rolls every note up if any are expanded,
+  otherwise expands them all — one consistent end state for the whole
+  batch rather than flipping each note independently).
 
 ## Setup
 
@@ -77,11 +83,8 @@ Notes and boards are stored as a single JSON file at
 
 **Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
 not part of the repo). Bullets & numbering, note transparency, a font
-picker, hyperlinks, embedded images, in-note Find, and Lock Note are done
-(see Features above); remaining:
-- Note title (Edit title, Ctrl+F2)
-- Bulk tray actions: Show all notes, Hide all notes, Roll up/down notes,
-  Bring notes on top
+picker, hyperlinks, embedded images, in-note Find, Lock Note, Note title,
+and bulk tray actions are done (see Features above); remaining:
 - "Stick a note to a window" — hide/show a note synced with another
   window's minimize/restore/close (whole-window granularity only;
   browser-tab-level isn't feasible on Linux — no clean per-tab signal)

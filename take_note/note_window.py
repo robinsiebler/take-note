@@ -1238,6 +1238,14 @@ class NoteWindow(QWidget):
     def toggle_rolled(self):
         self._set_rolled(not self.note.rolled_up)
 
+    def set_rolled(self, rolled: bool):
+        """Public entry point for external callers (e.g. NoteManager's bulk
+        tray actions) that need to force a specific state rather than
+        toggle — skips the redundant work/mark_changed() when the note is
+        already in the requested state."""
+        if rolled != self.note.rolled_up:
+            self._set_rolled(rolled)
+
     def _set_rolled(self, rolled: bool, persist: bool = True):
         self.note.rolled_up = rolled
         if rolled:

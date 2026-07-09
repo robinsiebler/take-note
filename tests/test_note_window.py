@@ -1170,6 +1170,35 @@ def test_toggle_rolled_collapses_and_expands(qapp):
     assert not win.body.isHidden()
 
 
+def test_set_rolled_true_collapses_note(qapp):
+    win = make_note_window()
+    win.set_rolled(True)
+    assert win.note.rolled_up is True
+    assert win.body.isHidden()
+
+
+def test_set_rolled_false_expands_note(qapp):
+    win = make_note_window()
+    win.toggle_rolled()
+    win.set_rolled(False)
+    assert win.note.rolled_up is False
+    assert not win.body.isHidden()
+
+
+def test_set_rolled_is_a_noop_when_already_in_requested_state(qapp):
+    """Regression guard for the bulk "Roll Up/Down Notes" tray action:
+    set_rolled() must skip the work (and the mark_changed() it triggers)
+    when the note is already in the requested state, rather than treating
+    every call as a fresh edit."""
+    win = make_note_window()
+    changed = []
+    win.changed.connect(lambda: changed.append(1))
+
+    win.set_rolled(False)  # already expanded
+
+    assert len(changed) == 0
+
+
 def test_find_action_disabled_when_note_empty(qapp):
     win = make_note_window("")
     assert win.find_action.isEnabled() is False

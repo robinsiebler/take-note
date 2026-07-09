@@ -37,6 +37,19 @@ class TrayIcon(QSystemTrayIcon):
         new_board_action.triggered.connect(lambda: manager.create_board())
 
         self.menu.addSeparator()
+        bring_to_front_action = self.menu.addAction("Bring Notes on Top")
+        bring_to_front_action.triggered.connect(manager.bring_all_notes_to_front)
+
+        show_all_action = self.menu.addAction("Show All Notes")
+        show_all_action.triggered.connect(manager.show_all_notes)
+
+        hide_all_action = self.menu.addAction("Hide All Notes")
+        hide_all_action.triggered.connect(manager.hide_all_notes)
+
+        roll_all_action = self.menu.addAction("Roll Up/Down Notes")
+        roll_all_action.triggered.connect(manager.toggle_roll_all_notes)
+
+        self.menu.addSeparator()
         settings_action = self.menu.addAction("Settings…")
         settings_action.triggered.connect(manager.open_settings)
 
