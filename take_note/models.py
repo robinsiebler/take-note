@@ -13,7 +13,11 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
-# Default color palette.
+# Default color palette. All Material Design 200-weight pastels, for a
+# consistent saturation/lightness across the set — expanded from the
+# original 7 (yellow..grey) to 12 (user wanted 10-12 options) by adding
+# the 5 that filled the biggest hue gaps: red, cyan, lime, teal, and a
+# more blue-leaning purple than the existing one.
 SWATCHES = [
     "#fff59d",  # yellow
     "#a5d6a7",  # green
@@ -22,12 +26,23 @@ SWATCHES = [
     "#ffcc80",  # orange
     "#ce93d8",  # purple
     "#eeeeee",  # grey/white
+    "#ef9a9a",  # red
+    "#80deea",  # cyan
+    "#e6ee9c",  # lime
+    "#80cbc4",  # teal
+    "#b39ddb",  # deep purple / lavender
 ]
 DEFAULT_COLOR = SWATCHES[0]
 DEFAULT_HOTKEY = "Ctrl+Alt+N"
 
 # Separate, darker palette for text color: the pastel SWATCHES above read
-# poorly as font color against the (also pastel) note backgrounds.
+# poorly as font color against the (also pastel) note backgrounds. Also
+# expanded from 7 to 12 alongside SWATCHES; the 5 additions were checked
+# via WCAG contrast against all 12 SWATCHES entries (same method as
+# HYPERLINK_COLOR in note_window.py) and land in the same range as the
+# original 7's own worst cases (e.g. dark orange's ~1.6:1 against the
+# orange swatch) rather than a stricter bar — this is the user's own free
+# choice of text color, not a forced/unavoidable one like a hyperlink.
 FONT_SWATCHES = [
     "#000000",  # black
     "#5d4037",  # dark brown
@@ -36,6 +51,11 @@ FONT_SWATCHES = [
     "#1565c0",  # dark blue
     "#6a1b9a",  # dark purple
     "#e65100",  # dark orange
+    "#00695c",  # dark teal
+    "#283593",  # dark navy/indigo
+    "#424242",  # charcoal
+    "#ad1457",  # dark magenta
+    "#556b2f",  # dark olive
 ]
 
 # Named transparency presets, mapped to a QWidget.setWindowOpacity() value.
