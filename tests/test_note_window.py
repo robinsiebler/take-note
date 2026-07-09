@@ -3,15 +3,24 @@ from __future__ import annotations
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QTimer, Qt
 from PySide6.QtGui import (
+    QColor,
     QDesktopServices,
     QFont,
+    QImage,
     QKeyEvent,
     QMouseEvent,
     QTextCharFormat,
     QTextCursor,
     QTextListFormat,
 )
-from PySide6.QtWidgets import QFontDialog, QInputDialog, QMenu, QMessageBox, QToolButton
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFontDialog,
+    QInputDialog,
+    QMenu,
+    QMessageBox,
+    QToolButton,
+)
 
 from take_note.models import Note
 from take_note.note_window import NoteWindow
@@ -315,6 +324,7 @@ def test_text_menu_excludes_whole_note_actions(qapp):
         "Font…",
         "Font Style",
         "Font Color…",
+        "Add picture…",
         "Hyperlink…",
         "Bullets && Numbering",
         "Increase Indent",
@@ -681,6 +691,330 @@ def test_hyperlink_hover_tooltip_does_not_inherit_note_background(qapp):
     assert tooltip_widget is not None
     bg = tooltip_widget.palette().color(QPalette.ToolTipBase)
     assert bg.name() != win.note.color
+
+
+def _patch_image_dialog(monkeypatch, path):
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (path, "")))
+
+
+def _make_png(tmp_path, name="pic.png", width=4, height=4, color="red"):
+    path = tmp_path / name
+    image = QImage(width, height, QImage.Format_RGB32)
+    image.fill(QColor(color))
+    image.save(str(path), "PNG")
+    return str(path)
+
+
+def test_insert_image_dialog_inserts_image_into_document(qapp, monkeypatch, tmp_path):
+    win = make_note_window("")
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path))
+
+    win.show_insert_image_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().isImageFormat()
+
+
+def test_insert_image_dialog_replaces_selected_image_instead_of_stacking(qapp, monkeypatch, tmp_path):
+    """Triggering the picture-insert action while a picture is already
+    selected (the "Replace picture…" case in populate_text_menu) doesn't
+    stack a second picture on top of the first — a QTextCursor insert
+    always replaces its current selection, so the old picture is gone
+    afterward, not just visually covered."""
+    win = make_note_window("")
+    _insert_test_image(win, color="red")
+    image_end = win.body.textCursor().position()
+    win.body._select_image_at(image_end)
+    assert win._selection_is_image()
+
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path, color="blue"))
+    win.show_insert_image_dialog()
+
+    assert win.body.toPlainText() == "￼"
+
+
+def test_insert_image_dialog_cancelled_does_nothing(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_image_dialog(monkeypatch, "")
+
+    win.show_insert_image_dialog()
+
+    assert win.body.toPlainText() == "Some text"
+
+
+def test_insert_image_dialog_invalid_file_shows_warning(qapp, monkeypatch, tmp_path):
+    win = make_note_window("Some text")
+    bad_path = tmp_path / "not-an-image.png"
+    bad_path.write_bytes(b"not a real image")
+    _patch_image_dialog(monkeypatch, str(bad_path))
+    warned = {}
+    monkeypatch.setattr(
+        QMessageBox, "warning", staticmethod(lambda *a, **k: warned.setdefault("called", True))
+    )
+
+    win.show_insert_image_dialog()
+
+    assert warned.get("called") is True
+    assert win.body.toPlainText() == "Some text"
+
+
+def test_insert_image_persists_through_html_round_trip(qapp, monkeypatch, tmp_path):
+    """Regression guard for using a data: URI rather than the default
+    cursor.insertImage(): that path stores pixel data only in an
+    in-memory, process-wide QPixmapCache keyed by a generated name, so
+    toHtml() serializes a bare reference that resolves to nothing once
+    reloaded into a fresh document — e.g. after an app restart, which is
+    exactly when notes.json gets read back via setHtml()."""
+    win = make_note_window("")
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path))
+    win.show_insert_image_dialog()
+
+    html = win.body.toHtml()
+    assert "data:image/png;base64," in html
+
+    reloaded = make_note_window("")
+    reloaded.body.setHtml(html)
+    cursor = reloaded.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().isImageFormat()
+
+
+def test_insert_image_grows_note_wider_to_fit_wide_picture(qapp, monkeypatch, tmp_path):
+    """A picture wider than the note's current body isn't shrunk to fit —
+    the note grows to accommodate it instead (see _grow_to_fit_content),
+    since unlike a resize the user didn't ask for the picture to be made
+    smaller."""
+    win = make_note_window("")
+    before_width = win.width()
+    # Comfortably wider than the note but still well within the (offscreen
+    # test) screen's available geometry, so this exercises growth rather
+    # than the separate screen-cap path.
+    target_width = before_width + (win.screen().availableGeometry().width() - before_width) // 2
+    path = _make_png(tmp_path, width=target_width, height=40)
+    _patch_image_dialog(monkeypatch, path)
+
+    win.show_insert_image_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat().toImageFormat()
+    assert fmt.width() == target_width
+    assert win.width() > before_width
+
+
+def test_insert_image_grows_note_taller_to_fit_tall_picture(qapp, monkeypatch, tmp_path):
+    """Same growth behavior as width, along the other axis: a tall/
+    portrait picture grows the note's height instead of leaving it to
+    scroll, since (unlike text) there's no way to keep reading past the
+    fold."""
+    win = make_note_window("")
+    before_height = win.height()
+    viewport_width = win.body.viewport().width()
+    path = _make_png(tmp_path, width=viewport_width, height=viewport_width * 6)
+    _patch_image_dialog(monkeypatch, path)
+
+    win.show_insert_image_dialog()
+
+    assert win.height() > before_height
+
+
+def test_insert_image_caps_oversized_picture_to_screen(qapp, monkeypatch, tmp_path):
+    """A picture too big to ever fit on screen (so the note can't simply
+    grow to accommodate it) is the one case that still needs shrinking —
+    down to the screen's available geometry, minus this note's own header/
+    footer chrome."""
+    win = make_note_window("")
+    available = win.screen().availableGeometry()
+    path = _make_png(tmp_path, width=available.width() * 4, height=available.height() * 4)
+    _patch_image_dialog(monkeypatch, path)
+
+    win.show_insert_image_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat().toImageFormat()
+    assert fmt.width() <= available.width()
+    assert fmt.height() <= available.height() - win.header.height() - win.footer.height()
+
+
+def test_insert_image_does_not_upscale_small_image(qapp, monkeypatch, tmp_path):
+    win = make_note_window("")
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path, width=4, height=4))
+
+    win.show_insert_image_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat().toImageFormat()
+    assert fmt.width() == 4
+
+
+def test_insert_image_does_not_shrink_note_for_small_picture(qapp, monkeypatch, tmp_path):
+    win = make_note_window("")
+    before_width, before_height = win.width(), win.height()
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path, width=4, height=4))
+
+    win.show_insert_image_dialog()
+
+    assert (win.width(), win.height()) == (before_width, before_height)
+
+
+def test_insert_image_growth_capped_at_screen_available_size(qapp, monkeypatch, tmp_path):
+    win = make_note_window("")
+    viewport_width = win.body.viewport().width()
+    path = _make_png(tmp_path, width=viewport_width, height=viewport_width * 100)
+    _patch_image_dialog(monkeypatch, path)
+
+    win.show_insert_image_dialog()
+
+    available = win.screen().availableGeometry()
+    assert win.width() <= available.width()
+    assert win.height() <= available.height()
+
+
+def _insert_test_image(win, width=10, height=10, color="blue"):
+    image = QImage(width, height, QImage.Format_RGB32)
+    image.fill(QColor(color))
+    win.body.textCursor().insertImage(image)
+
+
+def _cursor_at(win, position):
+    cursor = QTextCursor(win.body.document())
+    cursor.setPosition(position)
+    return cursor
+
+
+def test_select_image_at_selects_image_from_position_before_it(qapp):
+    win = make_note_window("")
+    _insert_test_image(win)
+    image_end = win.body.textCursor().position()
+    image_start = image_end - 1
+
+    win.body._select_image_at(image_start)
+
+    cursor = win.body.textCursor()
+    assert sorted((cursor.selectionStart(), cursor.selectionEnd())) == [image_start, image_end]
+    assert cursor.charFormat().isImageFormat()
+
+
+def test_select_image_at_selects_image_from_position_after_it(qapp):
+    win = make_note_window("")
+    _insert_test_image(win)
+    image_end = win.body.textCursor().position()
+    image_start = image_end - 1
+
+    win.body._select_image_at(image_end)
+
+    cursor = win.body.textCursor()
+    assert sorted((cursor.selectionStart(), cursor.selectionEnd())) == [image_start, image_end]
+
+
+def test_select_image_at_leaves_plain_text_click_untouched(qapp):
+    """No image at the click point: a right-click on plain text shouldn't
+    manufacture a selection that wasn't there before."""
+    win = make_note_window("plain text, no image")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    win.body.setTextCursor(cursor)
+
+    win.body._select_image_at(3)
+
+    assert win.body.textCursor().hasSelection() is False
+    assert win.body.textCursor().position() == 0
+
+
+def test_select_image_at_leaves_existing_selection_when_click_inside_it(qapp):
+    """Matches ordinary right-click behavior elsewhere in the app: clicking
+    inside an existing multi-character selection keeps it (so Cut/Copy/
+    Delete act on the whole selection), rather than collapsing it just
+    because the click point happens to also sit next to an image
+    boundary."""
+    win = make_note_window("before")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+    win.body.setTextCursor(cursor)
+
+    win.body._select_image_at(2)
+
+    cursor = win.body.textCursor()
+    assert sorted((cursor.selectionStart(), cursor.selectionEnd())) == [0, len("before")]
+    assert not cursor.charFormat().isImageFormat()
+
+
+def test_context_menu_selects_image_and_enables_delete(qapp, monkeypatch):
+    """Regression: right-clicking directly on an inserted picture used to
+    leave whatever cursor/selection state already existed untouched (Qt's
+    default right-click behavior only repositions the cursor for a plain
+    click, not a context-menu click) — so Cut/Copy/Delete stayed disabled
+    in the standard context menu even though the picture under the click
+    was exactly what the user meant to act on."""
+    win = make_note_window("")
+    _insert_test_image(win)
+    image_end = win.body.textCursor().position()
+    image_start = image_end - 1
+    win.body.setTextCursor(_cursor_at(win, image_start))  # plain cursor, no selection
+
+    monkeypatch.setattr(win.body, "cursorForPosition", lambda pos: _cursor_at(win, image_start))
+    win.body._select_image_under_click(win.body.rect().center())
+
+    assert win.body.textCursor().hasSelection()
+    menu = win.body.createStandardContextMenu()
+    delete_action = next(a for a in menu.actions() if a.text() == "Delete")
+    assert delete_action.isEnabled()
+
+
+def test_text_menu_hides_font_bullets_indent_for_image_selection(qapp):
+    """Font/Bullets/Indent don't do anything meaningful on an image
+    selection, so the menu should skip them entirely rather than offering
+    harmless-but-confusing no-ops."""
+    win = make_note_window("")
+    _insert_test_image(win)
+    image_end = win.body.textCursor().position()
+    win.body._select_image_at(image_end)
+    assert win._selection_is_image()
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert titles == ["Replace picture…", "Hyperlink…"]
+
+
+def test_text_menu_keeps_all_items_for_plain_text_selection(qapp):
+    win = make_note_window("Some text")
+    select_all(win)
+    assert not win._selection_is_image()
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert titles == [
+        "Font…",
+        "Font Style",
+        "Font Color…",
+        "Add picture…",
+        "Hyperlink…",
+        "Bullets && Numbering",
+        "Increase Indent",
+        "Decrease Indent",
+    ]
+
+
+def test_text_menu_has_add_picture_action(qapp):
+    win = make_note_window("Some text")
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert "Add picture…" in titles
 
 
 def test_set_text_color_on_plain_text(qapp):

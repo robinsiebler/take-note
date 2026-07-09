@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QUrl, Qt, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -10,12 +11,14 @@ from PySide6.QtGui import (
     QDesktopServices,
     QFont,
     QGuiApplication,
+    QImage,
     QKeySequence,
     QTextCharFormat,
     QTextCursor,
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFontDialog,
     QHBoxLayout,
     QInputDialog,
@@ -187,11 +190,50 @@ class NoteBody(QTextEdit):
         # transparency, always-on-top, Memoboard, delete) don't make sense
         # to offer while the user is mid-selection in the text, and live in
         # the header's right-click menu / hamburger menu instead.
+        self._select_image_under_click(event.pos())
         menu = self.createStandardContextMenu()
         menu.setStyleSheet(get_menu_qss())
         menu.addSeparator()
         self.note_window.populate_text_menu(menu)
         menu.exec(event.globalPos())
+
+    def _select_image_under_click(self, pos):
+        """Right-clicking directly on an inline image otherwise leaves any
+        existing cursor/selection completely untouched (Qt's default
+        behavior for a right-click), so Cut/Copy/Delete in the standard
+        context menu stay disabled even though the image under the click
+        is exactly what the user meant to act on. Thin pixel-to-position
+        adapter — the actual decision logic lives in _select_image_at so
+        it can be unit tested against known document positions instead of
+        synthetic mouse coordinates."""
+        self._select_image_at(self.cursorForPosition(pos).position())
+
+    def _select_image_at(self, position: int):
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            start, end = sorted((cursor.selectionStart(), cursor.selectionEnd()))
+            if start <= position <= end:
+                return  # clicked inside an existing selection; leave it alone
+
+        # movePosition() can fail at a document boundary (no actual
+        # movement), leaving anchor == position — but charFormat() on that
+        # empty "selection" still reports the format of the preceding
+        # character (the format that would be used for the next typed
+        # character), which is a false positive right after an image.
+        # hasSelection() rules that out.
+        doc = self.document()
+        forward = QTextCursor(doc)
+        forward.setPosition(position)
+        forward.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor)
+        if forward.hasSelection() and forward.charFormat().isImageFormat():
+            self.setTextCursor(forward)
+            return
+
+        backward = QTextCursor(doc)
+        backward.setPosition(position)
+        backward.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor)
+        if backward.hasSelection() and backward.charFormat().isImageFormat():
+            self.setTextCursor(backward)
 
     def keyPressEvent(self, event):
         # Tab/Shift+Tab indent or dedent the current list item, matching
@@ -472,6 +514,84 @@ class NoteWindow(QWidget):
         else:
             cursor.insertText(url, fmt)
         self.mark_changed()
+
+    def show_insert_image_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Add Picture", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)"
+        )
+        if not path:
+            return
+
+        image = QImage(path)
+        if image.isNull():
+            QMessageBox.warning(self, "Add Picture", "Could not load that image file.")
+            return
+
+        # The note itself grows to fit the picture (see
+        # _grow_to_fit_content below), so the only thing that needs
+        # shrinking here is a picture too big for the screen itself —
+        # never upscale a smaller one.
+        image = self._cap_image_to_screen(image)
+
+        # Persisted as a self-contained base64 data: URI rather than via
+        # QTextDocument's resource cache: cursor.insertImage() would add the
+        # pixel data to an in-memory, process-wide QPixmapCache keyed by a
+        # generated name, which toHtml() serializes as a bare reference to
+        # that name — it looks fine within the same run but the actual image
+        # bytes never reach notes.json, so the picture is gone after a
+        # restart. A data: URI round-trips through setHtml()/toHtml() on its
+        # own since Qt's default resource loader resolves data: URLs natively
+        # (confirmed directly; nothing extra needed).
+        buffer = QByteArray()
+        device = QBuffer(buffer)
+        device.open(QIODevice.WriteOnly)
+        image.save(device, "PNG")
+        data_uri = f"data:image/png;base64,{base64.b64encode(bytes(buffer)).decode('ascii')}"
+
+        self.body.textCursor().insertHtml(
+            f'<img src="{data_uri}" width="{image.width()}" height="{image.height()}">'
+        )
+        self.mark_changed()
+        self._grow_to_fit_content()
+
+    def _cap_image_to_screen(self, image: QImage) -> QImage:
+        """Caps a picture to the screen's available geometry (minus this
+        note's own header/footer chrome) before insertion, so
+        _grow_to_fit_content always has room to grow the note to fully
+        accommodate it — the image only actually needs shrinking here if it
+        wouldn't fit even in a full-screen-sized note."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        available = screen.availableGeometry()
+        max_width = available.width()
+        max_height = available.height() - self.header.height() - self.footer.height()
+        if image.width() > max_width or image.height() > max_height:
+            image = image.scaled(max_width, max_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return image
+
+    def _grow_to_fit_content(self):
+        """Grows the note — width and height independently — when its
+        content (namely a freshly inserted picture) no longer fits the
+        visible body area, so it's immediately visible without a manual
+        resize or a scrollbar. Each dimension is capped at the screen's
+        available geometry; _cap_image_to_screen already keeps any inserted
+        picture within that same bound, so growth here should normally be
+        enough on its own."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        available = screen.availableGeometry()
+
+        doc_size = self.body.document().size()
+        width_shortfall = doc_size.width() - self.body.viewport().width()
+        height_shortfall = doc_size.height() - self.body.viewport().height()
+
+        new_width = self.width()
+        if width_shortfall > 0:
+            new_width = min(self.width() + width_shortfall, available.width())
+        new_height = self.height()
+        if height_shortfall > 0:
+            new_height = min(self.height() + height_shortfall, available.height())
+
+        if new_width > self.width() or new_height > self.height():
+            self.resize(int(new_width), int(new_height))
 
     def _anchor_span(self, position: int, href: str) -> tuple[int, int]:
         """The [start, end) character range of the contiguous run of text
@@ -852,28 +972,48 @@ class NoteWindow(QWidget):
         self.populate_note_actions_menu(menu)
         menu.exec(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
 
+    def _selection_is_image(self) -> bool:
+        cursor = self.body.textCursor()
+        return cursor.hasSelection() and cursor.charFormat().isImageFormat()
+
     def populate_text_menu(self, menu: QMenu):
         """Text-formatting actions (font style/color, bullets & numbering,
         indent). Used only by NoteBody's contextMenuEvent (right-click in
         the text, appended after the standard Undo/Cut/Copy/Paste menu) —
         these act on the current selection, so whole-note actions like
         color/transparency/always-on-top/Memoboard/delete don't belong
-        here (see populate_note_actions_menu)."""
-        font_action = menu.addAction("Font…")
-        font_action.triggered.connect(self.show_font_dialog)
+        here (see populate_note_actions_menu).
 
-        font_style_menu = menu.addMenu("Font Style")
-        font_style_menu.addAction(self.bold_action)
-        font_style_menu.addAction(self.italic_action)
-        font_style_menu.addAction(self.underline_action)
-        font_style_menu.addAction(self.strikethrough_action)
-        font_style_menu.addSeparator()
-        font_style_menu.addAction(self.align_left_action)
-        font_style_menu.addAction(self.align_center_action)
-        font_style_menu.addAction(self.align_right_action)
+        Font/Bullets/Indent are skipped entirely when the selection is
+        exactly one image (e.g. right-clicking a picture, which
+        _select_image_under_click turns into a one-character image
+        selection) — none of them do anything meaningful there. The
+        picture-insert action and Hyperlink… stay either way: inserting a
+        picture while one is already selected replaces it (a QTextCursor
+        insert always replaces its current selection first), so it's
+        relabeled "Replace picture…" there rather than implying it stacks
+        on top; wrapping the image itself in a link is still sensible too."""
+        is_image_selection = self._selection_is_image()
 
-        font_color_action = menu.addAction("Font Color…")
-        font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
+        if not is_image_selection:
+            font_action = menu.addAction("Font…")
+            font_action.triggered.connect(self.show_font_dialog)
+
+            font_style_menu = menu.addMenu("Font Style")
+            font_style_menu.addAction(self.bold_action)
+            font_style_menu.addAction(self.italic_action)
+            font_style_menu.addAction(self.underline_action)
+            font_style_menu.addAction(self.strikethrough_action)
+            font_style_menu.addSeparator()
+            font_style_menu.addAction(self.align_left_action)
+            font_style_menu.addAction(self.align_center_action)
+            font_style_menu.addAction(self.align_right_action)
+
+            font_color_action = menu.addAction("Font Color…")
+            font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
+
+        image_action = menu.addAction("Replace picture…" if is_image_selection else "Add picture…")
+        image_action.triggered.connect(self.show_insert_image_dialog)
 
         # Same "no selection, caret inside an existing link" check as
         # show_hyperlink_dialog() itself — without this, the menu always
@@ -885,14 +1025,15 @@ class NoteWindow(QWidget):
         hyperlink_action = menu.addAction("Edit Hyperlink…" if is_editing_link else "Hyperlink…")
         hyperlink_action.triggered.connect(self.show_hyperlink_dialog)
 
-        bullets_menu = menu.addMenu("Bullets && Numbering")
-        current_style = self._current_list_style()
-        for style, action in self.list_style_actions:
-            action.setChecked(style == current_style)
-            bullets_menu.addAction(action)
+        if not is_image_selection:
+            bullets_menu = menu.addMenu("Bullets && Numbering")
+            current_style = self._current_list_style()
+            for style, action in self.list_style_actions:
+                action.setChecked(style == current_style)
+                bullets_menu.addAction(action)
 
-        menu.addAction(self.increase_indent_action)
-        menu.addAction(self.decrease_indent_action)
+            menu.addAction(self.increase_indent_action)
+            menu.addAction(self.decrease_indent_action)
 
     def populate_note_actions_menu(self, menu: QMenu):
         """Whole-note actions (color, transparency, always-on-top,
