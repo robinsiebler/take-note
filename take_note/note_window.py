@@ -207,6 +207,28 @@ def get_menu_qss() -> str:
     return MENU_QSS_DARK
 
 
+# The note/font color-picker popup only — deliberately not folded into
+# MENU_QSS_DARK/_LIGHT above, since rounded corners + a heavier border are
+# scoped to this one popup (per user feedback), not the app's other menus
+# (context menus, hamburger, tray). Mocked up as real rendered images
+# (rounded corners, several border/shadow treatments) before writing this;
+# user picked rounded corners + a thicker, lighter border with no shadow.
+COLOR_POPUP_QSS_DARK = """
+QMenu { background-color: #3a3a3a; color: white; border: 2px solid #9a9a9a; border-radius: 12px; padding: 4px; }
+"""
+
+COLOR_POPUP_QSS_LIGHT = """
+QMenu { background-color: #fafafa; color: #202020; border: 2px solid #a8a8a8; border-radius: 12px; padding: 4px; }
+"""
+
+
+def get_color_popup_qss() -> str:
+    scheme = QGuiApplication.styleHints().colorScheme()
+    if scheme == Qt.ColorScheme.Light:
+        return COLOR_POPUP_QSS_LIGHT
+    return COLOR_POPUP_QSS_DARK
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1159,11 +1181,13 @@ class NoteWindow(QWidget):
 
     def show_font_color_menu(self, anchor_widget: QWidget):
         menu = QMenu(self)
-        menu.setStyleSheet(get_menu_qss())
+        menu.setAttribute(Qt.WA_TranslucentBackground, True)
+        menu.setStyleSheet(get_color_popup_qss())
 
         grid_container = build_color_swatch_grid(
             FONT_SWATCHES, self.body.textColor().name(), lambda c: self._pick_font_color(c, menu)
         )
+        grid_container.setStyleSheet("background: transparent;")
         action = QWidgetAction(menu)
         action.setDefaultWidget(grid_container)
         menu.addAction(action)
@@ -1216,11 +1240,13 @@ class NoteWindow(QWidget):
 
     def show_color_menu(self, anchor_widget: QWidget):
         menu = QMenu(self)
-        menu.setStyleSheet(get_menu_qss())
+        menu.setAttribute(Qt.WA_TranslucentBackground, True)
+        menu.setStyleSheet(get_color_popup_qss())
 
         grid_container = build_color_swatch_grid(
             SWATCHES, self.note.color, lambda c: self._pick_color(c, menu)
         )
+        grid_container.setStyleSheet("background: transparent;")
         action = QWidgetAction(menu)
         action.setDefaultWidget(grid_container)
         menu.addAction(action)
