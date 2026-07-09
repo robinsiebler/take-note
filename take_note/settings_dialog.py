@@ -9,13 +9,14 @@ from PySide6.QtWidgets import (
     QKeySequenceEdit,
     QLabel,
     QPushButton,
+    QSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from .hotkey import HotkeyListener, parse_shortcut
-from .models import SWATCHES, Settings
+from .models import FONT_SWATCHES, SWATCHES, Settings
 from .widgets import build_color_swatch_grid
 
 
@@ -25,6 +26,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self._settings = settings
         self._pending_color = settings.default_color
+        self._pending_font_color = settings.default_font_color
         self._test_listener: HotkeyListener | None = None
 
         layout = QVBoxLayout(self)
@@ -59,6 +61,21 @@ class SettingsDialog(QDialog):
         )
         form.addRow(self._color_grid_layout)
 
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(6, 72)
+        self.font_size_spin.setValue(self._settings.default_font_size)
+        self.font_size_spin.setSuffix(" pt")
+        form.addRow("Default font size:", self.font_size_spin)
+
+        form.addRow(QLabel("Default font color:"))
+        self._font_color_grid_layout = QVBoxLayout()
+        self._font_color_grid_layout.addWidget(
+            build_color_swatch_grid(
+                FONT_SWATCHES, self._pending_font_color, self._on_pick_default_font_color
+            )
+        )
+        form.addRow(self._font_color_grid_layout)
+
         return tab
 
     def _on_pick_default_color(self, color: str):
@@ -69,6 +86,15 @@ class SettingsDialog(QDialog):
         old_widget.deleteLater()
         self._color_grid_layout.addWidget(
             build_color_swatch_grid(SWATCHES, color, self._on_pick_default_color)
+        )
+
+    def _on_pick_default_font_color(self, color: str):
+        self._pending_font_color = color
+        old_widget = self._font_color_grid_layout.itemAt(0).widget()
+        self._font_color_grid_layout.removeWidget(old_widget)
+        old_widget.deleteLater()
+        self._font_color_grid_layout.addWidget(
+            build_color_swatch_grid(FONT_SWATCHES, color, self._on_pick_default_font_color)
         )
 
     # -- Hotkey tab --------------------------------------------------------
@@ -131,6 +157,8 @@ class SettingsDialog(QDialog):
         return Settings(
             default_color=self._pending_color,
             default_always_on_top=self.always_on_top_check.isChecked(),
+            default_font_size=self.font_size_spin.value(),
+            default_font_color=self._pending_font_color,
             launch_at_login=self.launch_at_login_check.isChecked(),
             hotkey=self.hotkey_edit.keySequence().toString() or self._settings.hotkey,
         )

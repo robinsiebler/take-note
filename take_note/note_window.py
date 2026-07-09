@@ -55,14 +55,6 @@ STANDALONE_FLAGS = Qt.Window | Qt.FramelessWindowHint
 HEADER_HEIGHT = 22
 RADIUS = 10
 
-# Applied only to a genuinely empty note (see NoteWindow.__init__) — left
-# unset, the first character typed picks up whatever Qt's system default
-# font/palette happens to resolve to, which varies by machine (observed as
-# "Noto Sans" ~16pt with an unset/palette-default text color on the user's
-# own KDE session).
-DEFAULT_NEW_NOTE_FONT_SIZE = 12
-DEFAULT_NEW_NOTE_FONT_COLOR = "#000000"
-
 # A deep navy rather than the conventional bright hyperlink blue: one of
 # our own SWATCHES is a pastel light blue, and bright blue text blends
 # into it. Checked via WCAG contrast ratio against every SWATCHES color —
@@ -687,10 +679,13 @@ class NoteWindow(QWidget):
         """Only called for a genuinely empty note (see __init__) — a note
         loaded from disk with real content keeps whatever formatting it
         already has; this just fixes what the very first character typed
-        into a brand-new note picks up."""
+        into a brand-new note picks up. Reads the current Settings rather
+        than a fixed constant, so a user-configured default (Settings
+        dialog) takes effect for notes created after the change."""
+        settings = self.manager.settings
         fmt = QTextCharFormat()
-        fmt.setFontPointSize(DEFAULT_NEW_NOTE_FONT_SIZE)
-        fmt.setForeground(QColor(DEFAULT_NEW_NOTE_FONT_COLOR))
+        fmt.setFontPointSize(settings.default_font_size)
+        fmt.setForeground(QColor(settings.default_font_color))
         self.body.mergeCurrentCharFormat(fmt)
 
     # -- formatting --------------------------------------------------------

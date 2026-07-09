@@ -22,12 +22,13 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
-from take_note.models import Note
+from take_note.models import Note, Settings
 from take_note.note_window import NoteWindow
 
 
 class FakeManager:
     boards = {}
+    settings = Settings()
 
 
 def make_note_window(text=""):
@@ -423,6 +424,26 @@ def test_new_empty_note_defaults_to_12pt_black_font(qapp):
     fmt = cursor.charFormat()
     assert fmt.fontPointSize() == 12
     assert fmt.foreground().color().name() == "#000000"
+
+
+def test_new_empty_note_uses_manager_settings_font_size_and_color(qapp):
+    """The default isn't a fixed constant — it's read from the manager's
+    current Settings each time, so a user-configured default (Settings
+    dialog) takes effect for notes created after the change."""
+
+    class CustomManager:
+        boards = {}
+        settings = Settings(default_font_size=18, default_font_color="#c62828")
+
+    win = NoteWindow(Note(), manager=CustomManager())
+    win.body.insertPlainText("Hi")
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.fontPointSize() == 18
+    assert fmt.foreground().color().name() == "#c62828"
 
 
 def test_default_new_note_format_not_applied_to_note_loaded_with_content(qapp, monkeypatch):
