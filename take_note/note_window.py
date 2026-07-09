@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QFontDialog,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
@@ -539,6 +540,50 @@ class NoteFindBar(QWidget):
         self.field.setStyleSheet("background-color: #ffcdd2;" if not_found else "")
 
 
+class NoteTitleBar(QWidget):
+    """Shown only when the note has a title set, between the header and the
+    find bar — collapses away entirely for an untitled note (the common
+    case), so existing notes' layout looks exactly as it did before this
+    existed. Unlike the find bar's fixed neutral background, this uses the
+    note's own color: a title is part of the note's own content, not a
+    transient tool overlaid on top of it."""
+
+    def __init__(self, note_window: "NoteWindow"):
+        super().__init__()
+        self.note_window = note_window
+        self.setObjectName("titlebar")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.hide()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 3, 6, 3)
+
+        self.label = QLabel()
+        font = self.label.font()
+        font.setBold(True)
+        self.label.setFont(font)
+        layout.addWidget(self.label)
+
+    def set_title(self, title: str):
+        if title:
+            self.label.setText(title)
+            self.show()
+        else:
+            self.hide()
+
+    def apply_color(self, color_hex: str):
+        # Explicit black text: left unset, the label falls back to the
+        # ambient QPalette::WindowText role rather than QTextEdit's own
+        # QPalette::Text — on this system that resolves to a light color
+        # meant for a dark theme, reading as barely-visible pale text
+        # against every (light, pastel) note color.
+        self.setStyleSheet(
+            f"#titlebar {{ background-color: {color_hex}; "
+            f"border-bottom: 1px solid {header_shade(color_hex)}; }}"
+            "QLabel { color: black; }"
+        )
+
+
 class NoteWindow(QWidget):
     changed = Signal()
 
@@ -567,6 +612,7 @@ class NoteWindow(QWidget):
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
         self.set_locked(note.locked, persist=False)
+        self.title_bar.set_title(note.title)
         self.setWindowOpacity(note.opacity)
         self.show()
         if parent_board is None:
@@ -585,6 +631,9 @@ class NoteWindow(QWidget):
 
         self.header = NoteHeader(self)
         layout.addWidget(self.header)
+
+        self.title_bar = NoteTitleBar(self)
+        layout.addWidget(self.title_bar)
 
         self.find_bar = NoteFindBar(self)
         layout.addWidget(self.find_bar)
@@ -645,6 +694,11 @@ class NoteWindow(QWidget):
         # state here (the body is still empty at this point in __init__;
         # _build_ui's textChanged connection keeps it in sync afterward).
         self.find_action.setEnabled(bool(self.body.toPlainText()))
+
+        # Label is set dynamically each time the Hamburger menu opens (see
+        # populate_note_actions_menu) — "Add Title…" vs "Edit Title…",
+        # matching Hyperlink…/Edit Hyperlink…'s pattern in populate_text_menu.
+        self.title_action = make_action("Add Title…", "Ctrl+F2", self.show_title_dialog)
 
         self.align_left_action = QAction("Left", self)
         self.align_left_action.triggered.connect(lambda: self._set_alignment(Qt.AlignLeft))
@@ -785,6 +839,18 @@ class NoteWindow(QWidget):
             cursor.mergeCharFormat(fmt)
         else:
             cursor.insertText(url, fmt)
+        self.mark_changed()
+
+    def show_title_dialog(self):
+        title, ok = QInputDialog.getText(self, "Note Title", "Title:", text=self.note.title)
+        if not ok:
+            return
+        # Unlike MemoboardWindow.rename() (where an empty name just leaves
+        # the previous one in place, since a board always has *some* name),
+        # a note's title is optional — clearing the field and confirming
+        # removes it entirely, collapsing the title bar back away.
+        self.note.title = title.strip()
+        self.title_bar.set_title(self.note.title)
         self.mark_changed()
 
     def show_insert_image_dialog(self):
@@ -1075,6 +1141,7 @@ class NoteWindow(QWidget):
     def _apply_color(self):
         header_color = header_shade(self.note.color)
         self._update_header_style(header_color)
+        self.title_bar.apply_color(self.note.color)
         self.footer.setStyleSheet(
             f"#footer {{ background-color: {self.note.color}; "
             f"border-bottom-left-radius: {RADIUS}px; border-bottom-right-radius: {RADIUS}px; }}"
@@ -1346,6 +1413,9 @@ class NoteWindow(QWidget):
         menu and the hamburger (☰) button's dropdown — these apply to the
         note as a whole, not to a text selection, so they're kept out of
         the body's text-formatting menu (see populate_text_menu)."""
+        self.title_action.setText("Edit Title…" if self.note.title else "Add Title…")
+        menu.addAction(self.title_action)
+
         color_action = menu.addAction("Change Note Color…")
         color_action.triggered.connect(lambda: self.show_color_menu(self))
 

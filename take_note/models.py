@@ -53,6 +53,7 @@ TRANSPARENCY_LEVELS = [
 @dataclass
 class Note:
     id: str = field(default_factory=_new_id)
+    title: str = ""
     html: str = ""
     color: str = DEFAULT_COLOR
     x: int = 100

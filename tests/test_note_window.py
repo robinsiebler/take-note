@@ -340,6 +340,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
 
     titles = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert titles == [
+        "Add Title…",
         "Change Note Color…",
         "Note Transparency",
         "Always on Top",
@@ -465,6 +466,94 @@ def test_qfontdialog_getfont_returns_ok_then_font(qapp):
 
     assert isinstance(result[0], bool)
     assert isinstance(result[1], QFont)
+
+
+def _patch_title_dialog(monkeypatch, text, accepted):
+    """show_title_dialog() uses the static QInputDialog.getText() convenience
+    (matching MemoboardWindow.rename()'s pattern, unlike show_hyperlink_dialog's
+    instance-based approach) — so tests patch getText() directly rather than
+    exec()/textValue() on an instance."""
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (text, accepted)))
+
+
+def test_title_bar_hidden_by_default(qapp):
+    win = make_note_window("Some text")
+    assert win.title_bar.isHidden()
+
+
+def test_title_bar_visible_for_note_constructed_with_title(qapp):
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    assert not win.title_bar.isHidden()
+    assert win.title_bar.label.text() == "Groceries"
+
+
+def test_title_bar_label_has_explicit_black_text_color(qapp):
+    """Regression: left unset, the label fell back to the ambient
+    QPalette::WindowText role instead of QTextEdit's own QPalette::Text —
+    on the reporting system that resolved to a near-white color, reading
+    as barely-visible pale text against every (light, pastel) note color."""
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    assert "color: black" in win.title_bar.styleSheet()
+
+
+def test_show_title_dialog_sets_title_and_shows_bar(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_title_dialog(monkeypatch, "Groceries", True)
+
+    win.show_title_dialog()
+
+    assert win.note.title == "Groceries"
+    assert not win.title_bar.isHidden()
+    assert win.title_bar.label.text() == "Groceries"
+
+
+def test_show_title_dialog_cancelled_does_not_change_title(qapp, monkeypatch):
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    _patch_title_dialog(monkeypatch, "Something else", False)
+
+    win.show_title_dialog()
+
+    assert win.note.title == "Groceries"
+
+
+def test_show_title_dialog_clearing_title_hides_bar(qapp, monkeypatch):
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    _patch_title_dialog(monkeypatch, "", True)
+
+    win.show_title_dialog()
+
+    assert win.note.title == ""
+    assert win.title_bar.isHidden()
+
+
+def test_show_title_dialog_strips_whitespace(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_title_dialog(monkeypatch, "  Groceries  ", True)
+
+    win.show_title_dialog()
+
+    assert win.note.title == "Groceries"
+
+
+def test_note_actions_menu_shows_add_title_when_untitled(qapp):
+    win = make_note_window("Some text")
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+
+    assert menu.actions()[0].text() == "Add Title…"
+
+
+def test_note_actions_menu_shows_edit_title_when_titled(qapp):
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+
+    assert menu.actions()[0].text() == "Edit Title…"
+
+
+def test_title_action_has_ctrl_f2_shortcut(qapp):
+    win = make_note_window("Some text")
+    assert win.title_action.shortcut().toString() == "Ctrl+F2"
 
 
 def _patch_hyperlink_dialog(monkeypatch, text, accepted):
