@@ -1484,6 +1484,15 @@ class NoteWindow(QWidget):
             font_color_action = menu.addAction("Font Color…")
             font_color_action.triggered.connect(lambda: self.show_font_color_menu(self))
 
+            bullets_menu = menu.addMenu("Bullets && Numbering")
+            current_style = self._current_list_style()
+            for style, action in self.list_style_actions:
+                action.setChecked(style == current_style)
+                bullets_menu.addAction(action)
+
+            menu.addAction(self.increase_indent_action)
+            menu.addAction(self.decrease_indent_action)
+
         image_action = menu.addAction("Replace picture…" if is_image_selection else "Add picture…")
         image_action.triggered.connect(self.show_insert_image_dialog)
 
@@ -1496,16 +1505,6 @@ class NoteWindow(QWidget):
         is_editing_link = not cursor.hasSelection() and cursor.charFormat().isAnchor()
         hyperlink_action = menu.addAction("Edit Hyperlink…" if is_editing_link else "Hyperlink…")
         hyperlink_action.triggered.connect(self.show_hyperlink_dialog)
-
-        if not is_image_selection:
-            bullets_menu = menu.addMenu("Bullets && Numbering")
-            current_style = self._current_list_style()
-            for style, action in self.list_style_actions:
-                action.setChecked(style == current_style)
-                bullets_menu.addAction(action)
-
-            menu.addAction(self.increase_indent_action)
-            menu.addAction(self.decrease_indent_action)
 
         menu.addAction(self.find_action)
 

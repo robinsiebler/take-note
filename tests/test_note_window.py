@@ -325,11 +325,11 @@ def test_text_menu_excludes_whole_note_actions(qapp):
         "Font…",
         "Font Style",
         "Font Color…",
-        "Add picture…",
-        "Hyperlink…",
         "Bullets && Numbering",
         "Increase Indent",
         "Decrease Indent",
+        "Add picture…",
+        "Hyperlink…",
         "Find…",
     ]
 
@@ -1155,11 +1155,11 @@ def test_text_menu_keeps_all_items_for_plain_text_selection(qapp):
         "Font…",
         "Font Style",
         "Font Color…",
-        "Add picture…",
-        "Hyperlink…",
         "Bullets && Numbering",
         "Increase Indent",
         "Decrease Indent",
+        "Add picture…",
+        "Hyperlink…",
         "Find…",
     ]
 
