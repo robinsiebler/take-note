@@ -17,7 +17,7 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   new selection — hover shows a hand cursor and tooltip, Ctrl+Click opens
   it, a plain click still just places the cursor for editing.
 - Right-click the note body for text-formatting actions only; whole-note
-  actions (color, transparency, always-on-top, Memoboard, delete) live in
+  actions (color, transparency, always-on-top, Notepad, delete) live in
   the header's right-click menu and the hamburger (☰) button instead.
 - System tray icon: create notes/boards, open Settings, quit.
 - Global hotkey (default `Ctrl+Alt+N`, user-configurable in Settings) to
@@ -25,7 +25,7 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 - Settings dialog (tray → Settings…): launch at login, default note color,
   whether new notes start always-on-top, and a hotkey recorder that
   live-tests a combo for conflicts before committing to it.
-- Memoboards: group notes onto a shared corkboard-style window that shows,
+- Notepads: group notes onto a shared corkboard-style window that shows,
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark
   theme; note colors themselves stay as you set them regardless of theme.
@@ -89,8 +89,8 @@ picker, and hyperlinks are done (see Features above); remaining:
 - A more advanced note-color picker beyond the fixed swatch palette
 - Note "skins" / a Markdown editing mode
 - Spell check (would add a real dependency — hunspell/enchant)
-- Drag-and-drop of notes onto a Memoboard (currently a right-click "Add to
-  Memoboard" menu action instead)
+- Drag-and-drop of notes onto a Notepad (currently a right-click "Add to
+  Notepad" menu action instead)
 - A manual test plan and test cases (structured checklist for exercising
   the app by hand, distinct from the automated pytest suite)
 

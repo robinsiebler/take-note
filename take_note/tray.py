@@ -33,7 +33,7 @@ class TrayIcon(QSystemTrayIcon):
         new_note_action = self.menu.addAction("New Note")
         new_note_action.triggered.connect(lambda: manager.create_note())
 
-        new_board_action = self.menu.addAction("New Memoboard")
+        new_board_action = self.menu.addAction("New Notepad")
         new_board_action.triggered.connect(lambda: manager.create_board())
 
         self.menu.addSeparator()

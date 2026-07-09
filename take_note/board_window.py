@@ -31,7 +31,7 @@ class BoardHeader(QWidget):
     pattern as NoteHeader: stores board_window explicitly rather than
     relying on self.window()."""
 
-    def __init__(self, board_window: "MemoboardWindow"):
+    def __init__(self, board_window: "NotepadWindow"):
         super().__init__()
         self.board_window = board_window
         self._drag_offset = None
@@ -71,7 +71,7 @@ class BoardCanvas(QWidget):
     """The corkboard surface itself. Notes are reparented in here as plain
     child widgets, positioned via absolute move(x, y)."""
 
-    def __init__(self, board_window: "MemoboardWindow"):
+    def __init__(self, board_window: "NotepadWindow"):
         super().__init__()
         self.board_window = board_window
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -97,7 +97,7 @@ class BoardCanvas(QWidget):
         menu.exec(event.globalPos())
 
 
-class MemoboardWindow(QWidget):
+class NotepadWindow(QWidget):
     changed = Signal()
 
     def __init__(self, board: Board, manager):
@@ -167,7 +167,7 @@ class MemoboardWindow(QWidget):
         reply = QMessageBox.question(
             self,
             "Delete Board",
-            "Delete this Memoboard? Notes on it will be moved back to the desktop.",
+            "Delete this Notepad? Notes on it will be moved back to the desktop.",
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:

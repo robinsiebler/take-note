@@ -114,7 +114,7 @@ def _now_iso() -> str:
 class NoteHeader(QWidget):
     """Colored drag handle strip. Holds a direct reference to its NoteWindow
     (not self.window()) so dragging still works correctly once a note is
-    reparented into a Memoboard's canvas."""
+    reparented into a Notepad's canvas."""
 
     def __init__(self, note_window: "NoteWindow"):
         super().__init__()
@@ -187,7 +187,7 @@ class NoteBody(QTextEdit):
 
     def contextMenuEvent(self, event):
         # Only text-formatting actions here — whole-note actions (color,
-        # transparency, always-on-top, Memoboard, delete) don't make sense
+        # transparency, always-on-top, Notepad, delete) don't make sense
         # to offer while the user is mid-selection in the text, and live in
         # the header's right-click menu / hamburger menu instead.
         self._select_image_under_click(event.pos())
@@ -894,12 +894,12 @@ class NoteWindow(QWidget):
         if persist:
             self.mark_changed()
 
-    # -- Memoboard attach/detach -----------------------------------------
+    # -- Notepad attach/detach -----------------------------------------
 
     def attach_to_board(self, board, pos=None):
-        """Reparent this note into (or out of) a Memoboard canvas.
+        """Reparent this note into (or out of) a Notepad canvas.
 
-        `board` is a MemoboardWindow, or None to pop back to the desktop.
+        `board` is a NotepadWindow, or None to pop back to the desktop.
         Window flags only take effect on a widget with no parent, so the
         parent/flags/show sequence below must stay in this order.
         """
@@ -981,7 +981,7 @@ class NoteWindow(QWidget):
         indent). Used only by NoteBody's contextMenuEvent (right-click in
         the text, appended after the standard Undo/Cut/Copy/Paste menu) —
         these act on the current selection, so whole-note actions like
-        color/transparency/always-on-top/Memoboard/delete don't belong
+        color/transparency/always-on-top/Notepad/delete don't belong
         here (see populate_note_actions_menu).
 
         Font/Bullets/Indent are skipped entirely when the selection is
@@ -1037,7 +1037,7 @@ class NoteWindow(QWidget):
 
     def populate_note_actions_menu(self, menu: QMenu):
         """Whole-note actions (color, transparency, always-on-top,
-        Memoboard membership, delete). Used by the header's right-click
+        Notepad membership, delete). Used by the header's right-click
         menu and the hamburger (☰) button's dropdown — these apply to the
         note as a whole, not to a text selection, so they're kept out of
         the body's text-formatting menu (see populate_text_menu)."""
@@ -1055,7 +1055,7 @@ class NoteWindow(QWidget):
 
         menu.addSeparator()
         if self.note.board_id is None:
-            board_menu = menu.addMenu("Add to Memoboard")
+            board_menu = menu.addMenu("Add to Notepad")
             boards = list(self.manager.boards.values())
             for board_window in boards:
                 action = board_menu.addAction(board_window.board.name)
@@ -1064,12 +1064,12 @@ class NoteWindow(QWidget):
                 )
             if boards:
                 board_menu.addSeparator()
-            new_board_action = board_menu.addAction("New Memoboard…")
+            new_board_action = board_menu.addAction("New Notepad…")
             new_board_action.triggered.connect(
                 lambda: self.manager.create_board_and_attach(self)
             )
         else:
-            remove_action = menu.addAction("Remove from Memoboard")
+            remove_action = menu.addAction("Remove from Notepad")
             remove_action.triggered.connect(
                 lambda: self.manager.detach_note_from_board(self)
             )

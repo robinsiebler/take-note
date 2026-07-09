@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QPoint, QTimer
 from PySide6.QtWidgets import QApplication
 
 from . import autostart, storage
-from .board_window import MemoboardWindow
+from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
 from .models import Board, Note
 from .note_window import NoteWindow
@@ -20,7 +20,7 @@ CASCADE_OFFSET = 24
 
 
 class NoteManager(QObject):
-    """Owns every open Note/Memoboard window, the tray icon, the global
+    """Owns every open Note/Notepad window, the tray icon, the global
     hotkey, and the single debounced save timer that writes all of them to
     disk as one JSON file."""
 
@@ -28,7 +28,7 @@ class NoteManager(QObject):
         super().__init__()
         self.app = app
         self.notes: dict[str, NoteWindow] = {}
-        self.boards: dict[str, MemoboardWindow] = {}
+        self.boards: dict[str, NotepadWindow] = {}
 
         # Settings must be known before the hotkey listener is created, so
         # read them here; load_from_disk() re-reads (along with notes/boards)
@@ -58,7 +58,7 @@ class NoteManager(QObject):
         # Boards first so each note's board canvas already exists by the
         # time a note with a board_id needs to be parented into it.
         for board in boards:
-            board_window = MemoboardWindow(board, self)
+            board_window = NotepadWindow(board, self)
             self._wire_board(board_window)
 
         for note in notes:
@@ -73,13 +73,13 @@ class NoteManager(QObject):
         self.notes[note_window.note.id] = note_window
         note_window.changed.connect(self._schedule_save)
 
-    def _wire_board(self, board_window: MemoboardWindow):
+    def _wire_board(self, board_window: NotepadWindow):
         self.boards[board_window.board.id] = board_window
         board_window.changed.connect(self._schedule_save)
 
     # -- notes -----------------------------------------------------------
 
-    def create_note(self, board: MemoboardWindow | None = None, pos: QPoint | None = None) -> NoteWindow:
+    def create_note(self, board: NotepadWindow | None = None, pos: QPoint | None = None) -> NoteWindow:
         note = Note(
             color=self.settings.default_color,
             always_on_top=self.settings.default_always_on_top,
@@ -101,9 +101,9 @@ class NoteManager(QObject):
 
     # -- boards ----------------------------------------------------------
 
-    def create_board(self, name: str = "Memoboard") -> MemoboardWindow:
+    def create_board(self, name: str = "Notepad") -> NotepadWindow:
         board = Board(name=name)
-        board_window = MemoboardWindow(board, self)
+        board_window = NotepadWindow(board, self)
         self._wire_board(board_window)
         self._schedule_save()
         return board_window
@@ -112,7 +112,7 @@ class NoteManager(QObject):
         board_window = self.create_board()
         self.attach_note_to_board(note_window, board_window)
 
-    def attach_note_to_board(self, note_window: NoteWindow, board_window: MemoboardWindow):
+    def attach_note_to_board(self, note_window: NoteWindow, board_window: NotepadWindow):
         note_window.attach_to_board(board_window, pos=QPoint(20, 20))
         self._schedule_save()
 
@@ -122,7 +122,7 @@ class NoteManager(QObject):
         note_window.attach_to_board(None, pos=pos)
         self._schedule_save()
 
-    def delete_board(self, board_window: MemoboardWindow):
+    def delete_board(self, board_window: NotepadWindow):
         board_id = board_window.board.id
         offset = 0
         for note_window in list(self.notes.values()):

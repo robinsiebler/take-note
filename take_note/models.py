@@ -78,7 +78,7 @@ class Note:
 @dataclass
 class Board:
     id: str = field(default_factory=_new_id)
-    name: str = "Memoboard"
+    name: str = "Notepad"
     color: str = "#e0e0e0"
     x: int = 150
     y: int = 150

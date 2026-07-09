@@ -312,7 +312,7 @@ def test_bullets_menu_checks_current_style(qapp):
 
 def test_text_menu_excludes_whole_note_actions(qapp):
     """Regression: right-clicking selected text used to show whole-note
-    actions (Change Color, Transparency, Always on Top, Memoboard,
+    actions (Change Color, Transparency, Always on Top, Notepad,
     Delete) alongside text formatting, which doesn't make sense mid-
     selection — those now live only in the note-actions menu."""
     win = make_note_window("Some text")
@@ -342,7 +342,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
         "Change Note Color…",
         "Note Transparency",
         "Always on Top",
-        "Add to Memoboard",
+        "Add to Notepad",
         "Delete Note",
     ]
 
