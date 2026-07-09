@@ -37,6 +37,10 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 - In-note Find (Ctrl+F, or the context menu's "Find…" — disabled on an
   empty note): a small non-modal find bar with Next/Previous and
   wrap-around search.
+- Lock Note (hamburger ☰ menu): makes the note read-only — the
+  text-formatting context menu collapses to just Find…, and Ctrl+B/I/U/K
+  stop working too, so a locked note can't be edited from the keyboard
+  either.
 
 ## Setup
 
@@ -73,9 +77,8 @@ Notes and boards are stored as a single JSON file at
 
 **Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
 not part of the repo). Bullets & numbering, note transparency, a font
-picker, hyperlinks, embedded images, and in-note Find are done (see
-Features above); remaining:
-- Lock note (disable editing)
+picker, hyperlinks, embedded images, in-note Find, and Lock Note are done
+(see Features above); remaining:
 - Note title (Edit title, Ctrl+F2)
 - Bulk tray actions: Show all notes, Hide all notes, Roll up/down notes,
   Bring notes on top

@@ -343,6 +343,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
         "Change Note Color…",
         "Note Transparency",
         "Always on Top",
+        "Lock Note",
         "Add to Notepad",
         "Delete Note",
     ]
@@ -1206,3 +1207,188 @@ def test_escape_key_in_find_field_closes_bar(qapp):
 def test_find_action_has_ctrl_f_shortcut(qapp):
     win = make_note_window("Some text")
     assert win.find_action.shortcut().toString() == "Ctrl+F"
+
+
+def test_locked_note_is_read_only(qapp):
+    win = make_note_window("Some text")
+    assert win.body.isReadOnly() is False
+
+    win.set_locked(True)
+
+    assert win.note.locked is True
+    assert win.body.isReadOnly() is True
+
+
+def test_unlocking_note_restores_editing(qapp):
+    win = make_note_window("Some text")
+    win.set_locked(True)
+
+    win.set_locked(False)
+
+    assert win.note.locked is False
+    assert win.body.isReadOnly() is False
+
+
+def test_note_constructed_locked_applies_read_only_at_startup(qapp):
+    win = NoteWindow(Note(locked=True), manager=FakeManager())
+    assert win.body.isReadOnly() is True
+
+
+def test_locked_note_disables_formatting_shortcuts(qapp):
+    """setReadOnly() alone only blocks QTextEdit's own default keystroke
+    handling — these persistent QActions carry their own global Ctrl+B/I/
+    U/K shortcuts wired directly to the window, so locking must disable
+    them too or a locked note could still be formatted from the keyboard."""
+    win = make_note_window("Some text")
+
+    win.set_locked(True)
+
+    assert win.bold_action.isEnabled() is False
+    assert win.italic_action.isEnabled() is False
+    assert win.underline_action.isEnabled() is False
+    assert win.strikethrough_action.isEnabled() is False
+
+
+def test_unlocking_note_reenables_formatting_shortcuts(qapp):
+    win = make_note_window("Some text")
+    win.set_locked(True)
+
+    win.set_locked(False)
+
+    assert win.bold_action.isEnabled() is True
+    assert win.italic_action.isEnabled() is True
+    assert win.underline_action.isEnabled() is True
+    assert win.strikethrough_action.isEnabled() is True
+
+
+def test_text_menu_only_shows_find_when_locked(qapp):
+    win = make_note_window("Some text")
+    win.set_locked(True)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert titles == ["Find…"]
+
+
+def test_note_actions_menu_lock_action_reflects_state(qapp):
+    win = make_note_window("Some text")
+    win.set_locked(True)
+
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+
+    lock_action = next(a for a in menu.actions() if a.text() == "Lock Note")
+    assert lock_action.isCheckable() is True
+    assert lock_action.isChecked() is True
+
+
+def test_toggle_lock_action_in_menu_updates_note_model(qapp):
+    win = make_note_window("Some text")
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+    lock_action = next(a for a in menu.actions() if a.text() == "Lock Note")
+
+    lock_action.trigger()
+
+    assert win.note.locked is True
+    assert win.body.isReadOnly() is True
+
+
+def test_tab_key_does_not_indent_list_when_locked(qapp):
+    win = make_note_window("Item one")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+    win.set_locked(True)
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Tab, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+
+    block = win.body.document().findBlockByNumber(0)
+    assert block.textList().format().indent() == 1
+
+
+def test_find_action_stays_enabled_while_note_is_locked(qapp):
+    """Find only edits nothing (search/navigation), so locking a note
+    shouldn't disable it — it's excluded from set_locked's shortcut
+    guard on purpose."""
+    win = make_note_window("Some text")
+
+    win.set_locked(True)
+
+    assert win.find_action.isEnabled() is True
+
+
+def test_header_lock_button_reflects_initial_unlocked_state(qapp):
+    win = make_note_window("Some text")
+    assert not win.header.lock_btn.icon().isNull()
+    assert win.header.lock_btn.toolTip() == "Lock note"
+
+
+def test_header_lock_button_reflects_locked_state(qapp):
+    """The lock icon is hand-drawn (see lock_icon()) rather than a text
+    glyph — neither padlock emoji renders at all in this app's actual
+    runtime environment, confirmed directly (a blank gap in the header)
+    — so the two states are compared as rendered pixel data rather than
+    by a QToolButton.text() value."""
+    win = make_note_window("Some text")
+    unlocked_image = win.header.lock_btn.icon().pixmap(18, 18).toImage()
+
+    win.set_locked(True)
+
+    locked_image = win.header.lock_btn.icon().pixmap(18, 18).toImage()
+    assert locked_image != unlocked_image
+    assert win.header.lock_btn.toolTip() == "Unlock note"
+
+
+def _click_button(qapp, button):
+    pos = QPointF(5, 5)
+    for event_type in (QEvent.MouseButtonPress, QEvent.MouseButtonRelease):
+        event = QMouseEvent(event_type, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        qapp.sendEvent(button, event)
+
+
+def _double_click_button(qapp, button):
+    pos = QPointF(5, 5)
+    sequence = [
+        QEvent.MouseButtonPress,
+        QEvent.MouseButtonRelease,
+        QEvent.MouseButtonDblClick,
+        QEvent.MouseButtonRelease,
+    ]
+    for event_type in sequence:
+        event = QMouseEvent(event_type, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+        qapp.sendEvent(button, event)
+
+
+def test_single_click_on_lock_button_toggles_lock(qapp):
+    win = make_note_window("Some text")
+    assert win.note.locked is False
+
+    _click_button(qapp, win.header.lock_btn)
+
+    assert win.note.locked is True
+
+
+def test_double_click_on_lock_button_toggles_lock_exactly_once(qapp):
+    """Regression: a real double-click fires QAbstractButton's `clicked`
+    signal twice (once per half of the double-click, confirmed directly)
+    — wiring it straight to a toggle would flip the lock twice, a net
+    no-op. _LockButton suppresses the second emission so a double-click
+    still ends up toggling exactly once, same as a single click."""
+    win = make_note_window("Some text")
+    assert win.note.locked is False
+
+    _double_click_button(qapp, win.header.lock_btn)
+
+    assert win.note.locked is True
+
+
+def test_double_click_on_lock_button_from_locked_state_unlocks_once(qapp):
+    win = make_note_window("Some text")
+    win.set_locked(True)
+
+    _double_click_button(qapp, win.header.lock_btn)
+
+    assert win.note.locked is False

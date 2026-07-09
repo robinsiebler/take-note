@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QUrl, Qt, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, QSize, QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -11,8 +11,12 @@ from PySide6.QtGui import (
     QDesktopServices,
     QFont,
     QGuiApplication,
+    QIcon,
     QImage,
     QKeySequence,
+    QPainter,
+    QPen,
+    QPixmap,
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
@@ -66,6 +70,69 @@ HEADER_DARKEN = 230
 
 def header_shade(color_hex: str) -> str:
     return QColor(color_hex).darker(HEADER_DARKEN).name()
+
+
+#  Amber rather than white for the locked state — distinct at a glance from
+#  the unlocked icon (plain white, matching every other header icon) and
+#  reads as a "restricted" cue, not just a state swap. Picked over red/
+#  orange candidates by checking WCAG contrast against header_shade() of
+#  every SWATCHES color (same method as HYPERLINK_COLOR's own comment
+#  above) — reds and oranges all fell below a 3:1 floor (WCAG's own bar
+#  for graphical UI components, not full 4.5:1 text contrast) against at
+#  least one note color's darkened header, since their hue is close to the
+#  header's own warm dark tones; this amber clears 3:1 against all seven
+#  with room to spare.
+LOCK_ICON_COLOR_UNLOCKED = "white"
+LOCK_ICON_COLOR_LOCKED = "#ffe57f"
+
+
+def lock_icon(locked: bool, size: int = 18) -> QIcon:
+    """A hand-drawn icon rather than a text glyph — neither of Unicode's
+    padlock emoji (🔒/🔓, U+1F512/1F513) render at all in this app's actual
+    runtime environment (confirmed directly: they left a blank gap in the
+    header), so this avoids depending on emoji-font availability entirely,
+    the same way the tray icon in tray.py draws its own pixmap rather than
+    bundling an asset."""
+    color = LOCK_ICON_COLOR_LOCKED if locked else LOCK_ICON_COLOR_UNLOCKED
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(QColor(color))
+    pen.setWidthF(size * 0.09)
+    pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+
+    # Nudges the whole glyph down slightly within its canvas — centered
+    # exactly on the canvas rendered a bit high compared to this header's
+    # other, text-baseline-positioned icons (+, ▲/▼, ☰, ×).
+    y_offset = size * 0.1
+
+    shackle_w = size * 0.42
+    shackle_h = size * 0.38
+    shackle_top = size * 0.12 + y_offset
+    if locked:
+        shackle_rect = QRectF((size - shackle_w) / 2, shackle_top, shackle_w, shackle_h * 2)
+        painter.drawArc(shackle_rect, 0, 180 * 16)
+    else:
+        # Open: shackle swung up and to the left, only its right leg still
+        # planted in the body — a common minimal "unlocked" convention.
+        shackle_rect = QRectF(
+            (size - shackle_w) / 2 - size * 0.05, shackle_top - size * 0.12, shackle_w, shackle_h * 2
+        )
+        painter.drawArc(shackle_rect, 20 * 16, 160 * 16)
+
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.NoPen)
+    body_w = size * 0.6
+    body_h = size * 0.42
+    body_rect = QRectF((size - body_w) / 2, size * 0.46 + y_offset, body_w, body_h)
+    painter.drawRoundedRect(body_rect, size * 0.06, size * 0.06)
+
+    painter.end()
+    return QIcon(pixmap)
 
 # Cascades to every QToolButton inside whatever container this is mixed
 # into, so icons stay legible regardless of the app/system theme instead
@@ -125,6 +192,39 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class _LockButton(QToolButton):
+    """A real double-click on a QAbstractButton fires its `clicked` signal
+    twice — once for each half of the double-click, confirmed directly
+    (offscreen, sending Press/Release/DblClick/Release: the first Release
+    fires `clicked` immediately, then a second `clicked` fires from the
+    Release that follows the synthesized DblClick event). Wiring `clicked`
+    alone to toggle the lock would flip it twice on a double-click (locked
+    → unlocked → locked, a net no-op) — this suppresses that second
+    emission so both a single click and a double-click toggle exactly
+    once."""
+
+    def __init__(self, note_window: "NoteWindow"):
+        super().__init__()
+        self._note_window = note_window
+        self._suppress_next_click = False
+        self.clicked.connect(self._handle_click)
+
+    def _handle_click(self):
+        if self._suppress_next_click:
+            self._suppress_next_click = False
+            return
+        self._note_window.set_locked(not self._note_window.note.locked)
+
+    def mouseDoubleClickEvent(self, event):
+        # The first click's own Release already toggled the lock via the
+        # normal _handle_click() path before Qt even recognizes a double-
+        # click is underway — this only needs to suppress the *second*
+        # click's Release (which follows this event) from toggling it
+        # again, not perform a toggle of its own.
+        self._suppress_next_click = True
+        super().mouseDoubleClickEvent(event)
+
+
 class NoteHeader(QWidget):
     """Colored drag handle strip. Holds a direct reference to its NoteWindow
     (not self.window()) so dragging still works correctly once a note is
@@ -156,6 +256,11 @@ class NoteHeader(QWidget):
         self.roll_btn.setToolTip("Roll up / down")
         self.roll_btn.clicked.connect(note_window.toggle_rolled)
         layout.addWidget(self.roll_btn)
+
+        self.lock_btn = _LockButton(note_window)
+        self.lock_btn.setAutoRaise(True)
+        self.lock_btn.setIconSize(QSize(18, 18))
+        layout.addWidget(self.lock_btn)
 
         self.menu_btn = QToolButton()
         self.menu_btn.setText("☰")
@@ -253,8 +358,15 @@ class NoteBody(QTextEdit):
         # Tab/Shift+Tab indent or dedent the current list item, matching
         # standard word-processor behavior. Only intercepted while the
         # cursor is actually in a list, so plain-text Tab (insert a tab
-        # character) is untouched elsewhere.
-        if event.key() in (Qt.Key_Tab, Qt.Key_Backtab) and self.textCursor().currentList():
+        # character) is untouched elsewhere. Also skipped on a locked note:
+        # unlike setReadOnly()'s own built-in keystroke handling, this
+        # override calls _increase_indent()/_decrease_indent() directly and
+        # would otherwise still edit the list's indent despite the lock.
+        if (
+            not self.note_window.note.locked
+            and event.key() in (Qt.Key_Tab, Qt.Key_Backtab)
+            and self.textCursor().currentList()
+        ):
             if event.key() == Qt.Key_Backtab or event.modifiers() & Qt.ShiftModifier:
                 self.note_window._decrease_indent()
             else:
@@ -454,6 +566,7 @@ class NoteWindow(QWidget):
         self.resize(note.w, note.h)
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
+        self.set_locked(note.locked, persist=False)
         self.setWindowOpacity(note.opacity)
         self.show()
         if parent_board is None:
@@ -1023,6 +1136,29 @@ class NoteWindow(QWidget):
             set_stays_on_top(int(self.winId()), checked)
         self.mark_changed()
 
+    # -- lock --------------------------------------------------------------
+
+    def set_locked(self, checked: bool, persist: bool = True):
+        self.note.locked = checked
+        self.body.setReadOnly(checked)
+        # QTextEdit.setReadOnly() only blocks its own default keystroke
+        # handling, not these persistent QActions' global Ctrl+B/I/U/K
+        # shortcuts (wired directly to this window in _setup_actions) —
+        # without disabling them too, a locked note could still be
+        # formatted from the keyboard even with populate_text_menu's own
+        # menu skipped below.
+        for action in (
+            self.bold_action,
+            self.italic_action,
+            self.underline_action,
+            self.strikethrough_action,
+        ):
+            action.setEnabled(not checked)
+        self.header.lock_btn.setIcon(lock_icon(checked))
+        self.header.lock_btn.setToolTip("Unlock note" if checked else "Lock note")
+        if persist:
+            self.mark_changed()
+
     # -- transparency ------------------------------------------------------
 
     def set_opacity(self, value: float):
@@ -1151,7 +1287,15 @@ class NoteWindow(QWidget):
         picture while one is already selected replaces it (a QTextCursor
         insert always replaces its current selection first), so it's
         relabeled "Replace picture…" there rather than implying it stacks
-        on top; wrapping the image itself in a link is still sensible too."""
+        on top; wrapping the image itself in a link is still sensible too.
+
+        A locked note skips straight to just Find… — every other action
+        here edits content in some way, which is exactly what locking is
+        meant to prevent."""
+        if self.note.locked:
+            menu.addAction(self.find_action)
+            return
+
         is_image_selection = self._selection_is_image()
 
         if not is_image_selection:
@@ -1213,6 +1357,11 @@ class NoteWindow(QWidget):
         aot_action.setCheckable(True)
         aot_action.setChecked(self.note.always_on_top)
         aot_action.toggled.connect(self.set_always_on_top)
+
+        lock_action = menu.addAction("Lock Note")
+        lock_action.setCheckable(True)
+        lock_action.setChecked(self.note.locked)
+        lock_action.toggled.connect(self.set_locked)
 
         menu.addSeparator()
         if self.note.board_id is None:

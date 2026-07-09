@@ -61,6 +61,7 @@ class Note:
     h: int = 220
     always_on_top: bool = True
     rolled_up: bool = False
+    locked: bool = False
     opacity: float = 1.0
     board_id: str | None = None
     created_at: str = field(default_factory=_now_iso)
