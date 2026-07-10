@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from take_note import app as app_module
 from take_note.app import NoteManager
-from take_note.models import Note
+from take_note.models import SWATCHES, Note, Settings
 
 
 def _fake_manager(rolled_states):
@@ -112,3 +113,31 @@ def test_schedule_save_emits_notes_changed():
 
     manager._save_timer.start.assert_called_once()
     manager.notes_changed.emit.assert_called_once()
+
+
+def _fake_manager_for_create_note(settings) -> Mock:
+    manager = Mock()
+    manager.notes = {}
+    manager.boards = {}
+    manager.settings = settings
+    return manager
+
+
+def test_create_note_uses_default_color_when_not_randomizing(qapp):
+    settings = Settings(default_color="#a5d6a7", randomize_new_note_color=False)
+    manager = _fake_manager_for_create_note(settings)
+
+    note_window = NoteManager.create_note(manager)
+
+    assert note_window.note.color == "#a5d6a7"
+
+
+def test_create_note_uses_random_color_when_randomizing(qapp, monkeypatch):
+    monkeypatch.setattr(app_module.random, "choice", lambda seq: seq[3])
+    settings = Settings(default_color="#a5d6a7", randomize_new_note_color=True)
+    manager = _fake_manager_for_create_note(settings)
+
+    note_window = NoteManager.create_note(manager)
+
+    assert note_window.note.color == SWATCHES[3]
+    assert note_window.note.color != "#a5d6a7"
