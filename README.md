@@ -41,7 +41,7 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   text-formatting context menu collapses to just Find…, and Ctrl+B/I/U/K
   stop working too, so a locked note can't be edited from the keyboard
   either.
-- Note title (hamburger ☰ menu's first item, or Ctrl+F2): shows as a bold
+- Note title (hamburger ☰ menu's first item, or Shift+F2): shows as a bold
   line above the note body, only when set.
 - Tray menu bulk actions: Bring Notes on Top, Show All Notes, Hide All
   Notes, and Roll Up/Down Notes (rolls every note up if any are expanded,

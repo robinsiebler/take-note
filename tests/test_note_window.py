@@ -615,9 +615,11 @@ def test_note_actions_menu_shows_edit_title_when_titled(qapp):
     assert menu.actions()[0].text() == "Edit Title…"
 
 
-def test_title_action_has_ctrl_f2_shortcut(qapp):
+def test_title_action_has_shift_f2_shortcut(qapp):
+    """Was Ctrl+F2, changed because it collides with KWin's default
+    global "Switch to Desktop 2" shortcut — see note_window.py."""
     win = make_note_window("Some text")
-    assert win.title_action.shortcut().toString() == "Ctrl+F2"
+    assert win.title_action.shortcut().toString() == "Shift+F2"
 
 
 def _patch_hyperlink_dialog(monkeypatch, text, accepted):

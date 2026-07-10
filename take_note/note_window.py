@@ -763,7 +763,13 @@ class NoteWindow(QWidget):
         # Label is set dynamically each time the Hamburger menu opens (see
         # populate_note_actions_menu) — "Add Title…" vs "Edit Title…",
         # matching Hyperlink…/Edit Hyperlink…'s pattern in populate_text_menu.
-        self.title_action = make_action("Add Title…", "Ctrl+F2", self.show_title_dialog)
+        # Was Ctrl+F2, but that collides with KWin's default global "Switch
+        # to Desktop 2" shortcut (~/.config/kglobalshortcutsrc) on at least
+        # one user's KDE setup — a compositor-level grab that eats the key
+        # before X11 ever delivers it to this window, so the action never
+        # fired no matter how correctly it was wired here. Shift+F2 is
+        # free in both this app's own shortcuts and KWin's global defaults.
+        self.title_action = make_action("Add Title…", "Shift+F2", self.show_title_dialog)
 
         self.align_left_action = QAction("Left", self)
         self.align_left_action.triggered.connect(lambda: self._set_alignment(Qt.AlignLeft))
