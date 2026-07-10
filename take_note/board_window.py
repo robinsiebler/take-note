@@ -71,11 +71,29 @@ class BoardCanvas(QWidget):
     """The corkboard surface itself. Notes are reparented in here as plain
     child widgets, positioned via absolute move(x, y)."""
 
+    # Was a flat setMinimumSize(600, 600) — bigger than the board's own
+    # default window size (Board.w/h default to 400x300), guaranteeing a
+    # scrollbar out of the box with zero content anywhere near an edge,
+    # and clipping any note dragged past the currently-scrolled-into-view
+    # region of that oversized, otherwise-empty canvas. grow_to_fit()
+    # instead tracks the real viewport size, only growing past that when
+    # a note is actually positioned beyond it.
+    MARGIN = 20
+
     def __init__(self, board_window: "NotepadWindow"):
         super().__init__()
         self.board_window = board_window
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setMinimumSize(600, 600)
+
+    def grow_to_fit(self):
+        needed = self.board_window.scroll.viewport().size()
+        needed_w, needed_h = needed.width(), needed.height()
+        for child in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+            geo = child.geometry()
+            needed_w = max(needed_w, geo.right() + self.MARGIN)
+            needed_h = max(needed_h, geo.bottom() + self.MARGIN)
+        self.setMinimumSize(needed_w, needed_h)
+        self.resize(needed_w, needed_h)
 
     def contextMenuEvent(self, event):
         board_window = self.board_window
@@ -115,6 +133,7 @@ class NotepadWindow(QWidget):
         self.resize(board.w, board.h)
         self.move(board.x, board.y)
         self.show()
+        self.canvas.grow_to_fit()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -191,3 +210,4 @@ class NotepadWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.mark_changed()
+        self.canvas.grow_to_fit()

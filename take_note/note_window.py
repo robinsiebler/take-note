@@ -1447,10 +1447,13 @@ class NoteWindow(QWidget):
         if board is not None:
             self.setParent(board.canvas)
             self.setWindowFlags(Qt.Widget)
+            # Must be set before move() below — moveEvent's canvas-fit
+            # hook only acts when board_id is already set, and this is
+            # the very first positioning onto the board.
+            self.note.board_id = board.board.id
             if pos is not None:
                 self.move(pos)
             self.show()
-            self.note.board_id = board.board.id
             # See _build_ui()'s size_grip comment: wrong resize target and
             # a rendering artifact once this note is no longer top-level.
             self.size_grip.hide()
@@ -1495,10 +1498,24 @@ class NoteWindow(QWidget):
     def moveEvent(self, event):
         super().moveEvent(event)
         self.mark_changed()
+        self._notify_board_canvas()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.mark_changed()
+        self._notify_board_canvas()
+
+    def _notify_board_canvas(self):
+        # Duck-typed rather than importing BoardCanvas (board_window.py
+        # already imports from this module — importing back would be
+        # circular). Lets the board's canvas grow to keep covering this
+        # note if it's been dragged/resized past the canvas's current
+        # bounds, or shrink back down once it's no longer needed.
+        if self.note.board_id is None:
+            return
+        grow_to_fit = getattr(self.parent(), "grow_to_fit", None)
+        if grow_to_fit is not None:
+            grow_to_fit()
 
     # -- context menu / delete --------------------------------------------
 
