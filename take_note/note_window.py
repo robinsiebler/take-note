@@ -725,8 +725,21 @@ class NoteWindow(QWidget):
         bottom_row = QHBoxLayout(self.footer)
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.addStretch()
-        bottom_row.addWidget(QSizeGrip(self))
+        self.size_grip = QSizeGrip(self.footer)
+        bottom_row.addWidget(self.size_grip)
         layout.addWidget(self.footer)
+        # QSizeGrip resizes self.window() — the nearest *top-level*
+        # ancestor. Once attached to a board, that's the board, not this
+        # note (confirmed live: dragging it would resize the whole
+        # board). Also left a visible rendering artifact in that state — a
+        # small rectangular notch cut into the note's rounded corner,
+        # since a plain child widget doesn't get the whole-window alpha
+        # clipping a real top-level translucent window gets from the
+        # compositor, so the grip's native square icon could poke past
+        # the painted rounded-corner curve instead of being invisibly
+        # clipped away. Hidden whenever attached; see attach_to_board().
+        if self.note.board_id is not None:
+            self.size_grip.hide()
 
     def _apply_default_new_note_format(self):
         """Only called for a genuinely empty note (see __init__) — a note
@@ -1438,6 +1451,9 @@ class NoteWindow(QWidget):
                 self.move(pos)
             self.show()
             self.note.board_id = board.board.id
+            # See _build_ui()'s size_grip comment: wrong resize target and
+            # a rendering artifact once this note is no longer top-level.
+            self.size_grip.hide()
         else:
             self.setParent(None)
             self._apply_standalone_flags()
@@ -1451,6 +1467,7 @@ class NoteWindow(QWidget):
             set_skip_taskbar(win_id, True)
             set_stays_on_top(win_id, self.note.always_on_top)
             self.note.board_id = None
+            self.size_grip.show()
         self.mark_changed()
 
     # -- persistence hooks -------------------------------------------------

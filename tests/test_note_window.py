@@ -20,9 +20,10 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QToolButton,
+    QWidget,
 )
 
-from take_note.models import Note, Settings
+from take_note.models import Board, Note, Settings
 from take_note.note_window import NoteWindow, find_bar_tint
 
 
@@ -1761,3 +1762,46 @@ def test_double_click_on_lock_button_from_locked_state_unlocks_once(qapp):
     _double_click_button(qapp, win.header.lock_btn)
 
     assert win.note.locked is False
+
+
+class FakeBoard:
+    """Bare stand-in for NotepadWindow — attach_to_board() only needs
+    `.canvas` (a real QWidget to reparent into) and `.board.id`."""
+
+    def __init__(self):
+        self.canvas = QWidget()
+        self.board = Board(id="board-1")
+
+
+def test_size_grip_hidden_after_attaching_to_board(qapp):
+    """QSizeGrip resizes self.window() — the nearest top-level ancestor.
+    Once attached to a board, that's the board, not this note (confirmed
+    live: dragging it resized the whole board). It also left a visible
+    rendering artifact — a small notch cut into the note's rounded corner
+    — since a plain child widget doesn't get the whole-window alpha
+    clipping a real top-level translucent window gets from the
+    compositor. Hiding it sidesteps both."""
+    win = make_note_window("Some text")
+    board = FakeBoard()
+    assert win.size_grip.isVisible()
+
+    win.attach_to_board(board)
+
+    assert not win.size_grip.isVisible()
+
+
+def test_size_grip_shown_again_after_detaching_from_board(qapp):
+    win = make_note_window("Some text")
+    board = FakeBoard()
+    win.attach_to_board(board)
+
+    win.attach_to_board(None)
+
+    assert win.size_grip.isVisible()
+
+
+def test_size_grip_hidden_for_note_constructed_already_attached(qapp):
+    """Covers loading a note from disk that's already attached — not just
+    the live attach_to_board() transition."""
+    win = NoteWindow(Note(board_id="board-1"), manager=FakeManager())
+    assert not win.size_grip.isVisible()
