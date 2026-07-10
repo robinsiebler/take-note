@@ -604,14 +604,23 @@ class NoteTitleBar(QWidget):
         layout.setContentsMargins(6, 3, 6, 3)
 
         self.label = QLabel()
-        font = self.label.font()
-        font.setBold(True)
-        self.label.setFont(font)
         layout.addWidget(self.label)
 
     def set_title(self, title: str):
         if title:
             self.label.setText(title)
+            # Match the body's current font (family + size) rather than
+            # the ambient default the label started with, so the title
+            # reads as the same "voice" as the note itself — still bold,
+            # since it's a heading, just not a mismatched typeface. If a
+            # user picks an ugly body font, the title inherits that too;
+            # that's their own choice via the Font… dialog, not a bug.
+            body_font = self.note_window.body.currentFont()
+            font = self.label.font()
+            font.setFamily(body_font.family())
+            font.setPointSize(body_font.pointSize())
+            font.setBold(True)
+            self.label.setFont(font)
             self.show()
         else:
             self.hide()

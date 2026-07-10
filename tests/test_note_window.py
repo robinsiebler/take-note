@@ -560,6 +560,18 @@ def test_title_bar_label_has_explicit_black_text_color(qapp):
     assert "color: black" in win.title_bar.styleSheet()
 
 
+def test_title_bar_font_matches_body_font_family_and_size(qapp):
+    """The title used to just bold the label's own ambient default font,
+    unrelated to whatever font the note body actually uses — now matches
+    the body's family/size (still bold, since it's a heading)."""
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    body_font = win.body.currentFont()
+    title_font = win.title_bar.label.font()
+    assert title_font.family() == body_font.family()
+    assert title_font.pointSize() == body_font.pointSize()
+    assert title_font.bold()
+
+
 def test_show_title_dialog_sets_title_and_shows_bar(qapp, monkeypatch):
     win = make_note_window("Some text")
     _patch_title_dialog(monkeypatch, "Groceries", True)
