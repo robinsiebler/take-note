@@ -82,6 +82,45 @@ def test_search_also_matches_note_body_not_just_title(qapp):
     assert browser.table.item(0, 0).data(Qt.UserRole) == n1.note.id
 
 
+def test_preview_column_shows_body_snippet_for_untitled_notes(qapp):
+    """Regression: an untitled note showed as bare "(untitled)" with
+    nothing else to distinguish it from any other untitled note."""
+    n1 = _note_window(title="", body_text="Check out my songs, stories and poems!")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.item(0, 1).text() == "Check out my songs, stories and poems!"
+
+
+def test_preview_column_collapses_whitespace_and_truncates(qapp):
+    long_body = "word " * 30
+    n1 = _note_window(title="", body_text=long_body)
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    preview = browser.table.item(0, 1).text()
+    assert "\n" not in preview
+    assert len(preview) <= 61  # 60 chars + the ellipsis character
+    assert preview.endswith("…")
+
+
+def test_notepad_column_shows_board_name_when_attached(qapp):
+    work = _board_window(name="Work")
+    n1 = _note_window(title="Report", board_id=work.board.id)
+    manager = _fake_manager(notes={n1.note.id: n1}, boards={work.board.id: work})
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.item(0, 2).text() == "Work"
+
+
+def test_notepad_column_blank_when_unfiled(qapp):
+    n1 = _note_window(title="Groceries")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.item(0, 2).text() == ""
+
+
 def test_search_field_has_a_clear_button(qapp):
     """Regression: there was previously no way to clear the search box
     short of manually deleting the typed text."""

@@ -80,7 +80,10 @@ class NotesBrowserWindow(QWidget):
 
     def _restore_geometry(self):
         settings = self.manager.settings
-        self.resize(settings.notes_browser_w or 700, settings.notes_browser_h or 450)
+        # Wider than a bare 700 now that the table has grown from 2
+        # columns (Title/Date Modified) to 4 (+ Preview/Notepad) — 700
+        # left Preview too cramped to show more than a few characters.
+        self.resize(settings.notes_browser_w or 900, settings.notes_browser_h or 450)
         if settings.notes_browser_x is not None and settings.notes_browser_y is not None:
             self.move(settings.notes_browser_x, settings.notes_browser_y)
 
@@ -134,10 +137,18 @@ class NotesBrowserWindow(QWidget):
         toolbar.addStretch()
         right_layout.addLayout(toolbar)
 
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Title", "Date Modified"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Title", "Preview", "Notepad", "Date Modified"])
+        # Title is Interactive (not Stretch) with a modest fixed starting
+        # width — Preview is the column actually meant to distinguish
+        # untitled notes, so it gets all the leftover space instead of
+        # splitting evenly with Title and ending up too narrow to show
+        # anything useful.
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        self.table.setColumnWidth(0, 140)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -217,8 +228,26 @@ class NotesBrowserWindow(QWidget):
             title_item = QTableWidgetItem(note.title or "(untitled)")
             title_item.setData(Qt.UserRole, note.id)
             self.table.setItem(row, 0, title_item)
-            self.table.setItem(row, 1, _DateTableWidgetItem(note.modified_at))
+            self.table.setItem(row, 1, QTableWidgetItem(self._preview_text(note_window)))
+            self.table.setItem(row, 2, QTableWidgetItem(self._board_name(note)))
+            self.table.setItem(row, 3, _DateTableWidgetItem(note.modified_at))
         self.table.setSortingEnabled(True)
+
+    @staticmethod
+    def _preview_text(note_window, limit: int = 60) -> str:
+        # The only way to tell two untitled notes apart in this table —
+        # collapse to one line so a multi-paragraph note doesn't turn a
+        # table row into several visual lines.
+        snippet = " ".join(note_window.body.toPlainText().split())
+        if len(snippet) > limit:
+            return snippet[:limit].rstrip() + "…"
+        return snippet
+
+    def _board_name(self, note) -> str:
+        if note.board_id is None:
+            return ""
+        board_window = self.manager.boards.get(note.board_id)
+        return board_window.board.name if board_window is not None else ""
 
     @staticmethod
     def _matches_query(note_window, query: str) -> bool:
