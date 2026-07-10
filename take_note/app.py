@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QObject, QPoint, QTimer
+from PySide6.QtCore import QObject, QPoint, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from . import autostart, storage
@@ -10,6 +10,7 @@ from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
 from .models import Board, Note
 from .note_window import NoteWindow
+from .notes_browser import NotesBrowserWindow
 from .settings_dialog import SettingsDialog
 from .tray import TrayIcon
 
@@ -24,11 +25,17 @@ class NoteManager(QObject):
     hotkey, and the single debounced save timer that writes all of them to
     disk as one JSON file."""
 
+    # Piggybacks on every existing _schedule_save() call site (create/delete
+    # note or board, attach/detach, and any note/board's own `changed`
+    # signal) so the Notes Browser can stay live without new call sites.
+    notes_changed = Signal()
+
     def __init__(self, app: QApplication):
         super().__init__()
         self.app = app
         self.notes: dict[str, NoteWindow] = {}
         self.boards: dict[str, NotepadWindow] = {}
+        self.notes_browser: "NotesBrowserWindow | None" = None
 
         # Settings must be known before the hotkey listener is created, so
         # read them here; load_from_disk() re-reads (along with notes/boards)
@@ -161,6 +168,16 @@ class NoteManager(QObject):
         board_window.deleteLater()
         self._schedule_save()
 
+    # -- notes browser -----------------------------------------------------
+
+    def open_notes_browser(self):
+        if self.notes_browser is None:
+            self.notes_browser = NotesBrowserWindow(self)
+        else:
+            self.notes_browser.show()
+            self.notes_browser.raise_()
+            self.notes_browser.activateWindow()
+
     # -- settings ------------------------------------------------------
 
     def open_settings(self):
@@ -201,6 +218,7 @@ class NoteManager(QObject):
 
     def _schedule_save(self):
         self._save_timer.start()
+        self.notes_changed.emit()
 
     def _save_now(self):
         notes = [nw.sync_model() for nw in self.notes.values()]

@@ -97,3 +97,18 @@ def test_on_about_to_quit_clears_every_notes_window_watcher():
 
     for note_window in manager.notes.values():
         note_window._clear_window_watcher.assert_called_once()
+
+
+def test_schedule_save_emits_notes_changed():
+    """The Notes Browser stays live by listening for this signal — it
+    must fire on every existing _schedule_save() call site (create/delete
+    note or board, attach/detach, any note/board's own `changed` signal)
+    without those call sites needing to know about it individually."""
+    manager = Mock()
+    manager._save_timer = Mock()
+    manager.notes_changed = Mock()
+
+    NoteManager._schedule_save(manager)
+
+    manager._save_timer.start.assert_called_once()
+    manager.notes_changed.emit.assert_called_once()

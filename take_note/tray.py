@@ -36,6 +36,9 @@ class TrayIcon(QSystemTrayIcon):
         new_board_action = self.menu.addAction("New Notepad")
         new_board_action.triggered.connect(lambda: manager.create_board())
 
+        notes_browser_action = self.menu.addAction("Notes Browser…")
+        notes_browser_action.triggered.connect(manager.open_notes_browser)
+
         self.menu.addSeparator()
         bring_to_front_action = self.menu.addAction("Bring Notes on Top")
         bring_to_front_action.triggered.connect(manager.bring_all_notes_to_front)
