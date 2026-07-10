@@ -5,7 +5,7 @@ from unittest.mock import Mock
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
-from take_note.models import Board, Note
+from take_note.models import Board, Note, Settings
 from take_note.notes_browser import ALL_NOTES, UNFILED, NotesBrowserWindow
 
 
@@ -22,11 +22,12 @@ def _board_window(**kwargs) -> Mock:
     return board_window
 
 
-def _fake_manager(notes=None, boards=None) -> Mock:
+def _fake_manager(notes=None, boards=None, settings=None) -> Mock:
     manager = Mock()
     manager.notes = notes or {}
     manager.boards = boards or {}
     manager.notes_changed = Mock()
+    manager.settings = settings or Settings()
     return manager
 
 
@@ -129,7 +130,7 @@ def test_delete_selected_note_confirms_then_calls_manager_delete_note(qapp, monk
     browser = NotesBrowserWindow(manager)
     browser.table.selectRow(0)
 
-    browser._delete_selected_note()
+    browser._delete_selected_notes()
 
     manager.delete_note.assert_called_once_with(n1)
 
@@ -141,9 +142,59 @@ def test_delete_selected_note_does_nothing_when_declined(qapp, monkeypatch):
     browser = NotesBrowserWindow(manager)
     browser.table.selectRow(0)
 
-    browser._delete_selected_note()
+    browser._delete_selected_notes()
 
     manager.delete_note.assert_not_called()
+
+
+def test_multi_select_delete_asks_once_and_deletes_every_selected_note(qapp, monkeypatch):
+    """Regression coverage for extending selection beyond a single row:
+    one confirmation dialog, not one per note, and every selected note
+    gets deleted."""
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    n1 = _note_window(title="Groceries")
+    n2 = _note_window(title="Taxes")
+    manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
+    browser = NotesBrowserWindow(manager)
+    browser.table.selectAll()
+
+    browser._delete_selected_notes()
+
+    assert manager.delete_note.call_count == 2
+    manager.delete_note.assert_any_call(n1)
+    manager.delete_note.assert_any_call(n2)
+
+
+def test_table_allows_extended_selection(qapp):
+    from PySide6.QtWidgets import QAbstractItemView
+
+    manager = _fake_manager()
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.selectionMode() == QAbstractItemView.ExtendedSelection
+
+
+def test_restores_saved_window_geometry(qapp):
+    settings = Settings(notes_browser_x=50, notes_browser_y=60, notes_browser_w=800, notes_browser_h=500)
+    manager = _fake_manager(settings=settings)
+
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.size().width() == 800
+    assert browser.size().height() == 500
+    assert browser.pos().x() == 50
+    assert browser.pos().y() == 60
+
+
+def test_resizing_persists_geometry_and_schedules_save(qapp):
+    manager = _fake_manager()
+    browser = NotesBrowserWindow(manager)
+
+    browser.resize(600, 400)
+
+    assert manager.settings.notes_browser_w == 600
+    assert manager.settings.notes_browser_h == 400
+    manager._schedule_save.assert_called()
 
 
 def test_new_note_on_all_notes_creates_unattached_note(qapp):

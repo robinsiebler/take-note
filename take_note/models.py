@@ -127,6 +127,14 @@ class Settings:
     launch_at_login: bool = False
     hotkey: str = DEFAULT_HOTKEY
 
+    # None until the Notes Browser has actually been moved/resized once —
+    # lets it fall back to NotesBrowserWindow's own built-in default
+    # geometry on first run rather than every user starting at (0, 0).
+    notes_browser_x: int | None = None
+    notes_browser_y: int | None = None
+    notes_browser_w: int | None = None
+    notes_browser_h: int | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 

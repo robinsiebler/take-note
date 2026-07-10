@@ -65,7 +65,6 @@ class NotesBrowserWindow(QWidget):
         super().__init__(None)
         self.manager = manager
         self.setWindowTitle("Take Note! — Notes Browser")
-        self.resize(700, 450)
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -74,9 +73,28 @@ class NotesBrowserWindow(QWidget):
 
         self._build_ui()
         self._refresh()
+        self._restore_geometry()
 
         manager.notes_changed.connect(self._schedule_refresh)
         self.show()
+
+    def _restore_geometry(self):
+        settings = self.manager.settings
+        self.resize(settings.notes_browser_w or 700, settings.notes_browser_h or 450)
+        if settings.notes_browser_x is not None and settings.notes_browser_y is not None:
+            self.move(settings.notes_browser_x, settings.notes_browser_y)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        settings = self.manager.settings
+        settings.notes_browser_x, settings.notes_browser_y = self.x(), self.y()
+        self.manager._schedule_save()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        settings = self.manager.settings
+        settings.notes_browser_w, settings.notes_browser_h = self.width(), self.height()
+        self.manager._schedule_save()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -111,7 +129,7 @@ class NotesBrowserWindow(QWidget):
         toolbar.addWidget(new_board_btn)
 
         delete_btn = QPushButton("Delete")
-        delete_btn.clicked.connect(self._delete_selected_note)
+        delete_btn.clicked.connect(self._delete_selected_notes)
         toolbar.addWidget(delete_btn)
         toolbar.addStretch()
         right_layout.addLayout(toolbar)
@@ -122,7 +140,7 @@ class NotesBrowserWindow(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSortingEnabled(True)
         self.table.doubleClicked.connect(self._open_selected_note)
@@ -219,11 +237,18 @@ class NotesBrowserWindow(QWidget):
             self.manager.create_note(board=board_window)
 
     def _selected_note_window(self):
+        note_windows = self._selected_note_windows()
+        return note_windows[0] if note_windows else None
+
+    def _selected_note_windows(self):
         rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        note_id = self.table.item(rows[0].row(), 0).data(Qt.UserRole)
-        return self.manager.notes.get(note_id)
+        note_windows = []
+        for row in rows:
+            note_id = self.table.item(row.row(), 0).data(Qt.UserRole)
+            note_window = self.manager.notes.get(note_id)
+            if note_window is not None:
+                note_windows.append(note_window)
+        return note_windows
 
     def _open_selected_note(self):
         note_window = self._selected_note_window()
@@ -233,44 +258,49 @@ class NotesBrowserWindow(QWidget):
         note_window.raise_()
         note_window.activateWindow()
 
-    def _delete_selected_note(self):
-        note_window = self._selected_note_window()
-        if note_window is None:
-            return
-        self._confirm_and_delete(note_window)
+    def _delete_selected_notes(self):
+        note_windows = self._selected_note_windows()
+        if note_windows:
+            self._confirm_and_delete(note_windows)
 
-    def _confirm_and_delete(self, note_window):
+    def _confirm_and_delete(self, note_windows):
+        if len(note_windows) == 1:
+            question = "Delete this note permanently?"
+        else:
+            question = f"Delete these {len(note_windows)} notes permanently?"
         reply = QMessageBox.question(
-            self,
-            "Delete Note",
-            "Delete this note permanently?",
-            QMessageBox.Yes | QMessageBox.No,
+            self, "Delete Note", question, QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            self.manager.delete_note(note_window)
+            for note_window in note_windows:
+                self.manager.delete_note(note_window)
 
     # -- context menus -----------------------------------------------------
 
     def _show_table_context_menu(self, pos):
-        note_window = self._selected_note_window()
-        if note_window is None:
+        note_windows = self._selected_note_windows()
+        if not note_windows:
             return
 
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_qss())
 
-        show_action = menu.addAction("Show Note")
-        show_action.triggered.connect(self._open_selected_note)
+        if len(note_windows) == 1:
+            note_window = note_windows[0]
+            show_action = menu.addAction("Show Note")
+            show_action.triggered.connect(self._open_selected_note)
 
-        if note_window.note.board_id is not None:
-            remove_action = menu.addAction("Remove from Notepad")
-            remove_action.triggered.connect(
-                lambda: self.manager.detach_note_from_board(note_window)
-            )
+            if note_window.note.board_id is not None:
+                remove_action = menu.addAction("Remove from Notepad")
+                remove_action.triggered.connect(
+                    lambda: self.manager.detach_note_from_board(note_window)
+                )
 
-        menu.addSeparator()
-        delete_action = menu.addAction("Delete Note")
-        delete_action.triggered.connect(lambda: self._confirm_and_delete(note_window))
+            menu.addSeparator()
+            delete_action = menu.addAction("Delete Note")
+        else:
+            delete_action = menu.addAction(f"Delete {len(note_windows)} Notes")
+        delete_action.triggered.connect(lambda: self._confirm_and_delete(note_windows))
 
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
