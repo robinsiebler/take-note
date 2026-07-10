@@ -59,3 +59,46 @@ def test_result_settings_preserves_other_fields_unrelated_to_font(qapp):
 
     assert result.default_color == "#a5d6a7"
     assert result.hotkey == "Ctrl+Shift+N"
+
+
+def test_randomize_color_checkbox_reflects_settings(qapp):
+    dialog = SettingsDialog(Settings(randomize_new_note_color=True))
+
+    assert dialog.randomize_color_check.isChecked()
+
+
+def test_result_settings_reflects_randomize_checkbox(qapp):
+    dialog = SettingsDialog(Settings(randomize_new_note_color=False))
+    dialog.randomize_color_check.setChecked(True)
+
+    result = dialog.result_settings()
+
+    assert result.randomize_new_note_color is True
+
+
+def test_checking_randomize_disables_default_color_grid(qapp):
+    dialog = SettingsDialog(Settings(randomize_new_note_color=False))
+    grid = dialog._color_grid_layout.itemAt(0).widget()
+    assert grid.isEnabled()
+
+    dialog.randomize_color_check.setChecked(True)
+
+    assert not grid.isEnabled()
+
+
+def test_result_settings_preserves_notes_browser_geometry(qapp):
+    """result_settings() builds a brand-new Settings() with only the
+    fields this dialog has controls for — anything else (like the Notes
+    Browser's own persisted geometry) must be carried through unchanged,
+    not silently reset to the dataclass defaults."""
+    settings = Settings(
+        notes_browser_x=50, notes_browser_y=60, notes_browser_w=800, notes_browser_h=500
+    )
+    dialog = SettingsDialog(settings)
+
+    result = dialog.result_settings()
+
+    assert result.notes_browser_x == 50
+    assert result.notes_browser_y == 60
+    assert result.notes_browser_w == 800
+    assert result.notes_browser_h == 500

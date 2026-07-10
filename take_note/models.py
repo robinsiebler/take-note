@@ -121,6 +121,7 @@ class Board:
 @dataclass
 class Settings:
     default_color: str = DEFAULT_COLOR
+    randomize_new_note_color: bool = False
     default_always_on_top: bool = True
     default_font_size: int = 12
     default_font_color: str = "#000000"

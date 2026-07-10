@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 
 from PySide6.QtCore import QObject, QPoint, QTimer, Signal
 from PySide6.QtWidgets import QApplication
@@ -8,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 from . import autostart, storage
 from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
-from .models import Board, Note
+from .models import SWATCHES, Board, Note
 from .note_window import NoteWindow
 from .notes_browser import NotesBrowserWindow
 from .settings_dialog import SettingsDialog
@@ -87,8 +88,13 @@ class NoteManager(QObject):
     # -- notes -----------------------------------------------------------
 
     def create_note(self, board: NotepadWindow | None = None, pos: QPoint | None = None) -> NoteWindow:
+        color = (
+            random.choice(SWATCHES)
+            if self.settings.randomize_new_note_color
+            else self.settings.default_color
+        )
         note = Note(
-            color=self.settings.default_color,
+            color=color,
             always_on_top=self.settings.default_always_on_top,
         )
         if board is not None:

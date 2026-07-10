@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGraphicsOpacityEffect,
     QKeySequenceEdit,
     QLabel,
     QPushButton,
@@ -61,6 +62,12 @@ class SettingsDialog(QDialog):
         )
         form.addRow(self._color_grid_layout)
 
+        self.randomize_color_check = QCheckBox("Randomize new note color")
+        self.randomize_color_check.setChecked(self._settings.randomize_new_note_color)
+        self.randomize_color_check.toggled.connect(self._on_toggle_randomize_color)
+        form.addRow(self.randomize_color_check)
+        self._on_toggle_randomize_color(self.randomize_color_check.isChecked())
+
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(6, 72)
         self.font_size_spin.setValue(self._settings.default_font_size)
@@ -84,9 +91,32 @@ class SettingsDialog(QDialog):
         old_widget = self._color_grid_layout.itemAt(0).widget()
         self._color_grid_layout.removeWidget(old_widget)
         old_widget.deleteLater()
-        self._color_grid_layout.addWidget(
-            build_color_swatch_grid(SWATCHES, color, self._on_pick_default_color)
-        )
+        new_grid = build_color_swatch_grid(SWATCHES, color, self._on_pick_default_color)
+        self._color_grid_layout.addWidget(new_grid)
+        self._set_default_color_grid_dimmed(self.randomize_color_check.isChecked())
+
+    def _on_toggle_randomize_color(self, checked: bool):
+        # The fixed default color is meaningless while randomizing is on
+        # (it's never used), so grey the swatch grid out rather than
+        # leaving a picker that silently does nothing.
+        self._set_default_color_grid_dimmed(checked)
+
+    def _set_default_color_grid_dimmed(self, dimmed: bool):
+        grid = self._color_grid_layout.itemAt(0).widget()
+        grid.setEnabled(not dimmed)
+        # setEnabled() alone stops clicks but each swatch's own QSS
+        # (background-color per swatch) has no :disabled rule, so it
+        # doesn't look any different — a QGraphicsOpacityEffect on the
+        # whole grid actually makes "disabled" visible. A fresh effect
+        # instance is needed each time since Qt only lets one widget own
+        # a given QGraphicsOpacityEffect at a time, and _on_pick_default_color
+        # replaces this grid widget outright on every swatch pick.
+        if dimmed:
+            effect = QGraphicsOpacityEffect(grid)
+            effect.setOpacity(0.35)
+            grid.setGraphicsEffect(effect)
+        else:
+            grid.setGraphicsEffect(None)
 
     def _on_pick_default_font_color(self, color: str):
         self._pending_font_color = color
@@ -156,11 +186,20 @@ class SettingsDialog(QDialog):
     def result_settings(self) -> Settings:
         return Settings(
             default_color=self._pending_color,
+            randomize_new_note_color=self.randomize_color_check.isChecked(),
             default_always_on_top=self.always_on_top_check.isChecked(),
             default_font_size=self.font_size_spin.value(),
             default_font_color=self._pending_font_color,
             launch_at_login=self.launch_at_login_check.isChecked(),
             hotkey=self.hotkey_edit.keySequence().toString() or self._settings.hotkey,
+            # No UI for these (yet) — carry them through unchanged rather
+            # than silently resetting them to their dataclass defaults,
+            # which building a brand-new Settings() here would otherwise
+            # do to any field this dialog doesn't have a control for.
+            notes_browser_x=self._settings.notes_browser_x,
+            notes_browser_y=self._settings.notes_browser_y,
+            notes_browser_w=self._settings.notes_browser_w,
+            notes_browser_h=self._settings.notes_browser_h,
         )
 
     def closeEvent(self, event):
