@@ -459,9 +459,21 @@ class NoteBody(QTextEdit):
         # collapsed caret there so hyperlink/format checks that follow
         # (Edit Hyperlink's URL prefill, Bullets & Numbering's checked
         # style, ...) read the click position instead of stale state.
+        # On a brand-new, never-typed note there's no real character
+        # anywhere for the configured default font/color (applied via
+        # mergeCurrentCharFormat in _apply_default_new_note_format) to
+        # live on — it exists only in the outgoing cursor's in-memory
+        # state, which setTextCursor() below discards wholesale. Confirmed
+        # directly: right-clicking such a note silently reset its ambient
+        # font size back to the app's base font, so the very first time
+        # Font… was opened on a never-typed note it showed the wrong
+        # size. Reapplying the ambient format afterward keeps it intact.
+        ambient_format = self.currentCharFormat() if not doc.toPlainText() else None
         plain = QTextCursor(doc)
         plain.setPosition(position)
         self.setTextCursor(plain)
+        if ambient_format is not None:
+            self.mergeCurrentCharFormat(ambient_format)
 
     def keyPressEvent(self, event):
         # Tab/Shift+Tab indent or dedent the current list item, matching
@@ -797,6 +809,16 @@ class NoteWindow(QWidget):
         # (harmless, but breaks tests asserting a single call) before the
         # explicit empty-note check even runs.
         self.body.textChanged.connect(self._fix_ambient_char_format)
+        # Also on cursorPositionChanged, not just textChanged: reported
+        # live — type a line, press Enter several times, type on the new
+        # line, arrow up into one of the blank lines in between, then
+        # type there and the text comes out grey. Confirmed directly:
+        # landing the cursor on certain blank lines via arrow keys alone
+        # (no text change at all) already desyncs the ambient format to
+        # no-brush, but textChanged never fires for a pure cursor move —
+        # so the very first character typed there inherits the bad format
+        # before this method ever gets a chance to run and correct it.
+        self.body.cursorPositionChanged.connect(self._fix_ambient_char_format)
         self.set_locked(note.locked, persist=False)
         self.title_bar.set_title(note.title)
         self._apply_opacity()

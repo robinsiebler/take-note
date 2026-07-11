@@ -1907,6 +1907,43 @@ def test_typing_after_a_single_enter_is_unaffected(qapp):
     assert fmt.foreground().color().name() == win.manager.settings.default_font_color
 
 
+def test_typing_after_arrowing_up_into_a_blank_line_keeps_default_format(qapp):
+    """Regression, reported live: type a line, press Enter several times,
+    type on the new line, then arrow up into one of the blank lines left
+    in between and type there — the text read grey. Distinct from
+    test_typing_after_two_consecutive_enters_keeps_default_format above:
+    that bug is caused by typing itself (textChanged fires and
+    _fix_ambient_char_format runs, but only after the fact), whereas this
+    one is caused by cursor movement alone. Confirmed directly: landing
+    on that blank line via the Up arrow already desyncs the ambient
+    format to no-brush with no text change at all — and textChanged never
+    fires for a pure cursor move, so the fix never got a chance to run
+    before the next character was typed. Fixed by also connecting
+    _fix_ambient_char_format to cursorPositionChanged."""
+    win = make_note_window("")
+    win.body.insertPlainText("First line")
+
+    for _ in range(6):
+        event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+        qapp.sendEvent(win.body, event)
+    win.body.insertPlainText("Second line")
+
+    up_event = QKeyEvent(QEvent.KeyPress, Qt.Key_Up, Qt.NoModifier)
+    qapp.sendEvent(win.body, up_event)
+    win.body.insertPlainText("X")
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.PreviousCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    # An unset/no-brush foreground's .color() also happens to read back as
+    # "#000000" (a default-constructed QColor), same as the real default
+    # color here — checking .style() too is what actually distinguishes
+    # "really set to black" from "never set at all", the exact gap that
+    # let this bug through undetected.
+    assert fmt.foreground().style() == Qt.BrushStyle.SolidPattern
+    assert fmt.foreground().color().name() == win.manager.settings.default_font_color
+
+
 def _insert_test_image(win, width=10, height=10, color="blue"):
     image = QImage(width, height, QImage.Format_RGB32)
     image.fill(QColor(color))
@@ -1960,6 +1997,28 @@ def test_select_image_at_moves_plain_text_click_without_selecting(qapp):
 
     assert win.body.textCursor().hasSelection() is False
     assert win.body.textCursor().position() == 3
+
+
+def test_select_image_at_preserves_ambient_format_on_empty_note(qapp):
+    """Reported live: right-clicking a brand-new, never-typed note (e.g.
+    to open Font…) showed the wrong font size — the app's base font
+    instead of the configured default. Root cause: the default font/color
+    set by _apply_default_new_note_format() lives only in the outgoing
+    cursor's in-memory current-char-format, since an empty document has
+    no real character to carry it — replacing the cursor via
+    setTextCursor() below (what every right-click does, through
+    _position_cursor_for_click) silently discarded it. Regression guard
+    for that discard, not for anything image-related."""
+    class CustomManager:
+        boards = {}
+        settings = Settings(default_font_size=22)
+
+    win = NoteWindow(Note(), manager=CustomManager())
+    assert win.body.currentCharFormat().fontPointSize() == 22
+
+    win.body._select_image_at(0)
+
+    assert win.body.currentCharFormat().fontPointSize() == 22
 
 
 def test_select_image_at_leaves_existing_selection_when_click_inside_it(qapp):
