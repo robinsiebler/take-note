@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from .list_markers import paint_list_markers
 from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
 from .widgets import build_color_swatch_grid
 from .window_watch import WindowWatcher, is_window_iconic, list_windows
@@ -354,6 +355,20 @@ class NoteBody(QTextEdit):
     def __init__(self, note_window: "NoteWindow"):
         super().__init__()
         self.note_window = note_window
+
+    def paintEvent(self, event):
+        # Qt6's native list-marker painting renders a checkbox-outline
+        # glyph instead of the real bullet/number for every block after
+        # the first in a multi-block selection — a confirmed Qt paint-
+        # engine bug, not something this app's own formatting causes (the
+        # underlying QTextListFormat data stays correct throughout). Cover
+        # each list block's marker gutter and hand-draw the marker
+        # ourselves instead of trusting Qt's native rendering there.
+        super().paintEvent(event)
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.Antialiasing)
+        paint_list_markers(self, painter)
+        painter.end()
 
     def contextMenuEvent(self, event):
         # Only text-formatting actions here — whole-note actions (color,

@@ -496,6 +496,72 @@ def test_indent_width_fits_widest_common_list_marker(qapp):
     assert win.body.document().indentWidth() >= widest_marker
 
 
+def _grab_marker_region(win, style, block_count, selected_blocks, target_block):
+    """Build an N-item list, select exactly `selected_blocks` (a
+    (start, end) block-index range, end exclusive), and grab the
+    rendered marker gutter for `target_block`."""
+    from take_note.list_markers import marker_gutter_rect
+
+    win.body.setPlainText("\n".join(f"Item {i}" for i in range(block_count)))
+    select_all(win)
+    win._set_list_style(style)
+    win.resize(320, 300)
+    win.show()
+
+    start, end = selected_blocks
+    cursor = win.body.textCursor()
+    cursor.setPosition(win.body.document().findBlockByNumber(start).position())
+    for _ in range(end - start):
+        cursor.movePosition(QTextCursor.NextBlock, QTextCursor.KeepAnchor)
+    win.body.setTextCursor(cursor)
+    win.body.repaint()
+
+    block = win.body.document().findBlockByNumber(target_block)
+    rect = marker_gutter_rect(win.body, block).toRect()
+    return win.body.viewport().grab().toImage().copy(rect)
+
+
+def test_multi_block_selected_disc_markers_render_identically_across_rows(qapp):
+    """Regression: selecting 2+ bulleted list items spanning multiple
+    blocks painted the first selected block's marker correctly but every
+    other selected block's marker as a small checkbox-outline glyph
+    instead — a confirmed Qt6 paint-engine bug, fixed by hand-drawing
+    markers ourselves (list_markers.py) instead of trusting Qt's native
+    list-marker rendering. This compares two selected rows' marker
+    regions pixel-for-pixel rather than asserting hardcoded colors, so it
+    directly targets the bug's own "first row right, rest wrong"
+    shape without being fragile to theme/font."""
+    if qapp.platformName() == "offscreen":
+        pytest.skip("marker rendering needs real xcb glyph painting, not offscreen's fallback font")
+
+    region0 = _grab_marker_region(make_note_window(), QTextListFormat.ListDisc, 4, (0, 3), 0)
+    region1 = _grab_marker_region(make_note_window(), QTextListFormat.ListDisc, 4, (0, 3), 1)
+
+    assert region0.size() == region1.size()
+    assert region0 == region1
+
+
+def test_multi_block_selected_decimal_markers_render_identically_across_rows(qapp):
+    """Same regression as above, covering the hand-drawn text-marker path
+    (numbers/letters/roman numerals) rather than just the disc-bullet
+    path. Text markers differ row-to-row ("1." vs "2."), so this can't
+    just diff two adjacent rows of one list like the disc test — instead
+    it renders the *same* item ("2.") twice: once as a lone (first)
+    selected block, once as the second of two selected blocks, and
+    compares those. Item numbering restarts per-list, so both renders
+    show identical text and (both selected) identical color; only
+    whether the bug's trigger condition (being a non-first selected
+    block) differs."""
+    if qapp.platformName() == "offscreen":
+        pytest.skip("marker rendering needs real xcb glyph painting, not offscreen's fallback font")
+
+    lone_selected = _grab_marker_region(make_note_window(), QTextListFormat.ListDecimal, 2, (1, 2), 1)
+    second_selected = _grab_marker_region(make_note_window(), QTextListFormat.ListDecimal, 2, (0, 2), 1)
+
+    assert lone_selected.size() == second_selected.size()
+    assert lone_selected == second_selected
+
+
 def test_delete_confirmation_dialog_forces_stays_on_top(qapp, monkeypatch):
     """Regression: a plain child QMessageBox didn't reliably outrank this
     note's own raw EWMH always-on-top state in KWin's stacking layers,
