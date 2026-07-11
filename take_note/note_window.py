@@ -535,6 +535,7 @@ class NoteFindBar(QWidget):
 
         self.field = _FindLineEdit()
         self.field.setPlaceholderText("Find…")
+        self.field.setClearButtonEnabled(True)
         self.field.textChanged.connect(self._find_from_start)
         self.field.returnPressed.connect(self.find_next)
         self.field.escapePressed.connect(self.close_bar)
@@ -1024,6 +1025,7 @@ class NoteWindow(QWidget):
         dialog.setWindowTitle(title)
         dialog.setLabelText(label)
         dialog.setTextValue(initial)
+        dialog.findChild(QLineEdit).setClearButtonEnabled(True)
         return dialog
 
     def _center_dialog_over_note(self, dialog: QInputDialog):

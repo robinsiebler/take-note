@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint, QTimer
 from PySide6.QtGui import QContextMenuEvent
-from PySide6.QtWidgets import QApplication, QInputDialog
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit
 
 from take_note.board_window import NotepadWindow
 from take_note.models import Board, Note, Settings
@@ -196,6 +196,21 @@ def test_rename_dialog_is_wide_enough_to_read_its_own_title(qapp, monkeypatch):
     board.rename()
 
     assert seen["width"] >= 480
+
+
+def test_rename_dialog_has_a_clear_button(qapp, monkeypatch):
+    board = NotepadWindow(Board(name="Test Notepad"), FakeManager())
+    seen = {}
+
+    def fake_exec(self):
+        seen["has_clear_button"] = self.findChild(QLineEdit).isClearButtonEnabled()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+
+    board.rename()
+
+    assert seen["has_clear_button"]
 
 
 def test_rename_dialog_prefills_current_name_and_applies_pick(qapp, monkeypatch):

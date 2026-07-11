@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFontDialog,
     QInputDialog,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QToolButton,
@@ -994,6 +995,27 @@ def test_show_title_dialog_strips_whitespace(qapp, monkeypatch):
     assert win.note.title == "Groceries"
 
 
+def test_title_and_hyperlink_dialogs_have_a_clear_button(qapp, monkeypatch):
+    """Both go through the shared _new_note_dialog() helper, so one test
+    covers both — matches the clear button the Notes Browser's search
+    field already has (QLineEdit.setClearButtonEnabled(True))."""
+    win = make_note_window("Some text")
+    seen = {}
+
+    def fake_exec(self):
+        seen["has_clear_button"] = self.findChild(QLineEdit).isClearButtonEnabled()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+
+    win.show_title_dialog()
+    assert seen["has_clear_button"]
+
+    seen.clear()
+    win.show_hyperlink_dialog()
+    assert seen["has_clear_button"]
+
+
 def test_show_title_dialog_is_wide_enough_to_read_its_own_title(qapp, monkeypatch):
     """Regression: the static QInputDialog.getText() convenience's default
     width was too narrow to even read the dialog's own title bar — same
@@ -1866,6 +1888,12 @@ def test_toggle_find_bar_shows_and_focuses_field(qapp):
     for _ in range(5):
         qapp.processEvents()
     assert win.find_bar.field.hasFocus()
+
+
+def test_find_bar_field_has_a_clear_button(qapp):
+    win = make_note_window("Some text")
+
+    assert win.find_bar.field.isClearButtonEnabled()
 
 
 def test_find_selects_first_match_as_you_type(qapp):

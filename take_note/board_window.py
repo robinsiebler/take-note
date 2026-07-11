@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QScrollArea,
@@ -198,6 +199,7 @@ class NotepadWindow(QWidget):
         dialog.setWindowTitle("Rename Notepad")
         dialog.setLabelText("Notepad name:")
         dialog.setTextValue(self.board.name)
+        dialog.findChild(QLineEdit).setClearButtonEnabled(True)
         # 320px still truncated the title bar itself on an unscaled
         # (100%) monitor even though it read fine on a 125%-scaled one —
         # the OS window-manager-drawn title bar's own text needs more
