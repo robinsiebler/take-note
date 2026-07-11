@@ -137,24 +137,20 @@ class SettingsDialog(QDialog):
                 "spell-check dictionary — see README."
             )
             unavailable_label.setWordWrap(True)
-            # This dialog has no custom stylesheet anywhere else — every
-            # other label just inherits the ambient system palette, which
-            # is exactly why the rest of it already adapts correctly to
-            # light/dark themes. A hardcoded color here would break that:
-            # a first attempt at a fixed dark-theme-tuned grey read fine
-            # against this app's own dark theme but was too light to read
-            # against a light one (confirmed via a live screenshot under
-            # each), and the reverse would happen with a light-tuned one.
-            # setEnabled(False) instead reuses Qt's own disabled-text
-            # palette role — the same mechanism already graying out the
-            # checkbox right above it — which resolves to an
-            # appropriately-contrasted grey under either theme
-            # automatically, no hardcoded value needed at all.
-            unavailable_label.setEnabled(False)
-            # Font size only here, deliberately no color property — a
-            # color set via stylesheet would override the palette-driven
-            # one setEnabled(False) just established above.
-            unavailable_label.setStyleSheet("font-size: 11px;")
+            # Two prior approaches both failed real screenshot checks,
+            # reported live each time: a first fixed dark-tuned grey read
+            # fine on dark but too light on light theme; switching to
+            # setEnabled(False) (Qt's own disabled-text palette role, the
+            # same mechanism graying out the checkbox above it) was
+            # assumed theme-correct but turned out too low-contrast to
+            # read on *either* theme in practice — disabled-text roles
+            # are deliberately muted for de-emphasis, not tuned for
+            # legibility of text that must actually be read. A fixed
+            # medium grey instead: roughly equidistant from both a
+            # near-black and a near-white background, so it reads
+            # clearly on both without needing to special-case per theme.
+            # Confirmed via rendered mockups on both before landing here.
+            unavailable_label.setStyleSheet("font-size: 11px; color: #888888;")
             form.addRow("", unavailable_label)
 
         return tab
