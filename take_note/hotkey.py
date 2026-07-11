@@ -110,6 +110,15 @@ class HotkeyListener(QThread):
         def _record_failure(err, request=None):
             nonlocal grab_failed_this_attempt
             grab_failed_this_attempt = True
+            # Must return truthy: Request._set_error() returns whatever
+            # this handler returns, and display.py's dispatcher only
+            # skips its own raw "X protocol error: ..." stderr dump when
+            # that return value is truthy. An implicit `return None` here
+            # meant every already-handled, already-logged failure also
+            # printed that raw dump anyway — confirmed by reading
+            # protocol/display.py and protocol/rq.py directly, not
+            # assumed.
+            return 1
 
         grabbed_any = False
         for ignore in ignored_combos:

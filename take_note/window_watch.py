@@ -125,6 +125,7 @@ class WindowWatcher(QThread):
     def run(self):
         try:
             from Xlib import X, display
+            from Xlib.error import XError
         except ImportError:
             logger.warning("python-xlib not available; cannot watch window")
             return
@@ -154,7 +155,21 @@ class WindowWatcher(QThread):
                         self.closed.emit()
                         return
                     if ev.type == X.PropertyNotify and ev.atom == wm_state_atom:
-                        prop = win.get_full_property(wm_state_atom, 0)
+                        # A closing window can fire this PropertyNotify (its
+                        # WM_STATE changing/being torn down) followed almost
+                        # immediately by DestroyNotify — confirmed live via a
+                        # BadWindow crash here, the fetch below racing actual
+                        # destruction and losing. An unhandled X error crashes
+                        # this thread's run() silently (Qt just logs it),
+                        # meaning `closed` never fires and the note is left
+                        # thinking it's still stuck to a window that's
+                        # already gone. Treat that race the same as an
+                        # explicit DestroyNotify.
+                        try:
+                            prop = win.get_full_property(wm_state_atom, 0)
+                        except XError:
+                            self.closed.emit()
+                            return
                         if prop is not None and len(prop.value) > 0:
                             state = prop.value[0]
                             if state == WM_STATE_ICONIC:

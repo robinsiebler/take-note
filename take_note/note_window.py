@@ -25,6 +25,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFileDialog,
     QFontDialog,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -350,22 +351,28 @@ class NoteBody(QTextEdit):
         # transparency, always-on-top, Notepad, delete) don't make sense
         # to offer while the user is mid-selection in the text, and live in
         # the header's right-click menu / hamburger menu instead.
-        self._select_image_under_click(event.pos())
+        self._position_cursor_for_click(event.pos())
         menu = self.createStandardContextMenu()
         menu.setStyleSheet(get_menu_qss())
         menu.addSeparator()
         self.note_window.populate_text_menu(menu)
         menu.exec(event.globalPos())
 
-    def _select_image_under_click(self, pos):
-        """Right-clicking directly on an inline image otherwise leaves any
-        existing cursor/selection completely untouched (Qt's default
-        behavior for a right-click), so Cut/Copy/Delete in the standard
-        context menu stay disabled even though the image under the click
-        is exactly what the user meant to act on. Thin pixel-to-position
-        adapter — the actual decision logic lives in _select_image_at so
-        it can be unit tested against known document positions instead of
-        synthetic mouse coordinates."""
+    def _position_cursor_for_click(self, pos):
+        """Right-clicking otherwise leaves any existing cursor/selection
+        completely untouched (Qt's default behavior for a right-click,
+        unlike a plain left-click), so the context menu that follows acts
+        on wherever the caret last happened to be rather than where the
+        user just clicked. Most visibly with images — Cut/Copy/Delete in
+        the standard context menu stayed disabled even though the picture
+        under the click was exactly what the user meant to act on — but
+        the same staleness hit plain text too: right-clicking directly on
+        a hyperlink still read "Hyperlink…" instead of "Edit Hyperlink…"
+        and didn't prefill its URL, since that check reads
+        self.textCursor() same as everything else in populate_text_menu.
+        Thin pixel-to-position adapter — the actual decision logic lives
+        in _select_image_at so it can be unit tested against known
+        document positions instead of synthetic mouse coordinates."""
         self._select_image_at(self.cursorForPosition(pos).position())
 
     def _select_image_at(self, position: int):
@@ -394,6 +401,15 @@ class NoteBody(QTextEdit):
         backward.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor)
         if backward.hasSelection() and backward.charFormat().isImageFormat():
             self.setTextCursor(backward)
+            return
+
+        # No image at the click point either direction: land a plain,
+        # collapsed caret there so hyperlink/format checks that follow
+        # (Edit Hyperlink's URL prefill, Bullets & Numbering's checked
+        # style, ...) read the click position instead of stale state.
+        plain = QTextCursor(doc)
+        plain.setPosition(position)
+        self.setTextCursor(plain)
 
     def keyPressEvent(self, event):
         # Tab/Shift+Tab indent or dedent the current list item, matching
@@ -631,10 +647,27 @@ class NoteTitleBar(QWidget):
         # QPalette::Text — on this system that resolves to a light color
         # meant for a dark theme, reading as barely-visible pale text
         # against every (light, pastel) note color.
+        #
+        # Explicit background-color: transparent on the label itself:
+        # without it, a note attached to a board painted this whole strip
+        # in the *board's* own background color instead of the note's —
+        # reported live via a screenshot. Root cause confirmed directly:
+        # the label's own resolved backgroundRole() picked up the board
+        # canvas's color (a genuine QObject ancestor once attached), and
+        # Qt's style-sheet engine paints a QLabel's implicit background
+        # from that resolved palette once styled-painting is active
+        # anywhere in the ancestor chain — even though nothing here ever
+        # asked for autoFillBackground. #titlebar's own background-color
+        # rule alone doesn't prevent that, since it's the *label's* own
+        # implicit fill sitting on top of it, not a failure to paint
+        # #titlebar itself (confirmed: #titlebar's own backgroundRole()
+        # read back correctly the whole time). Only reproducible for a
+        # note actually attached to a board — a standalone note has no
+        # such ancestor to inherit from.
         self.setStyleSheet(
             f"#titlebar {{ background-color: {color_hex}; "
             f"border-bottom: 1px solid {header_shade(color_hex)}; }}"
-            "QLabel { color: black; }"
+            "QLabel { color: black; background-color: transparent; }"
         )
 
 
@@ -670,11 +703,28 @@ class NoteWindow(QWidget):
         self.resize(note.w, note.h)
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
-        if not note.html:
+        # Not `if not note.html:` — QTextEdit.toHtml() on a genuinely
+        # empty document returns Qt's ~600-char boilerplate wrapper, not
+        # an empty string. A note saved once while still empty (e.g.
+        # rolled up and quit before ever being typed into) would persist
+        # that boilerplate as note.html, making this check false on the
+        # next launch and silently skipping the default-format
+        # application — text then typed into it picked up whatever Qt's
+        # own unset/ambient format resolves to instead of the configured
+        # default, reading as faded/grey rather than black. Checking the
+        # actual visible content instead of the raw HTML string is
+        # immune to Qt's own serialization boilerplate.
+        if not self.body.toPlainText():
             self._apply_default_new_note_format()
+        # Connected only after the initial load/default-format handling
+        # above rather than in _build_ui — connecting earlier fires this
+        # during setHtml() itself, double-applying the default format
+        # (harmless, but breaks tests asserting a single call) before the
+        # explicit empty-note check even runs.
+        self.body.textChanged.connect(self._fix_ambient_char_format_at_start)
         self.set_locked(note.locked, persist=False)
         self.title_bar.set_title(note.title)
-        self.setWindowOpacity(note.opacity)
+        self._apply_opacity()
         self.show()
         if parent_board is None:
             set_skip_taskbar(int(self.winId()), True)
@@ -753,6 +803,25 @@ class NoteWindow(QWidget):
         fmt.setFontPointSize(settings.default_font_size)
         fmt.setForeground(QColor(settings.default_font_color))
         self.body.mergeCurrentCharFormat(fmt)
+
+    def _fix_ambient_char_format_at_start(self):
+        """Deleting content back down to the very start of the document —
+        backspacing an inline picture that had nothing before it, or
+        clearing all text — can leave Qt's current-char-format tracking
+        pointing at its own unset/ambient format instead of picking up
+        real formatting from whatever remains, even though simply moving
+        the cursor to position 0 (no delete involved) inherits fine.
+        Confirmed live: it's specifically the no-brush foreground left
+        behind by a delete landing at position 0 that makes the next
+        typed character read faded/grey instead of the note's actual
+        color, matching the same class of bug _apply_default_new_note_format
+        already guards against for a brand-new note."""
+        cursor = self.body.textCursor()
+        if cursor.position() != 0 or cursor.hasSelection():
+            return
+        if self.body.currentCharFormat().foreground().style() != Qt.NoBrush:
+            return
+        self._apply_default_new_note_format()
 
     # -- formatting --------------------------------------------------------
 
@@ -887,13 +956,55 @@ class NoteWindow(QWidget):
         the theme, since QMenu.setStyleSheet() doesn't cascade into
         QWidgetAction-embedded widgets. A dialog sidesteps both problems
         and covers family/size/weight/italic/underline in one place."""
-        # PySide6 returns (ok, font) here — the reverse of PyQt5's (font, ok)
-        # convention, confirmed by direct inspection; got this backwards on
-        # the first pass, which crashed setCurrentFont() with a bool.
-        ok, font = QFontDialog.getFont(self.body.currentFont(), self)
-        if ok:
-            self.body.setCurrentFont(font)
-            self.mark_changed()
+        # A bare QFontDialog() instance (not the getFont(initial, self)
+        # convenience) for the same reason every other dialog here avoids
+        # self as parent — see _new_note_dialog's docstring for the full
+        # palette-bleed explanation. Confirmed this one's susceptible too:
+        # a board-attached note's QFontDialog(self) read back the board's
+        # own grey background instead of the theme's normal dark one.
+        dialog = QFontDialog()
+        dialog.setCurrentFont(self.body.currentFont())
+        self._center_dialog_over_note(dialog)
+        if dialog.exec() != QFontDialog.Accepted:
+            return
+        self.body.setCurrentFont(dialog.currentFont())
+        self.mark_changed()
+
+    def _new_note_dialog(self, title: str, label: str, initial: str) -> QInputDialog:
+        """Deliberately parentless — QInputDialog(self) would inherit this
+        note's resolved palette when the note is attached to a Notepad
+        board: the board canvas has an inline `background-color: ...`
+        stylesheet (see NotepadWindow._apply_color), which cascades
+        through the real widget tree into the note (a genuine descendant)
+        and then into a dialog built with the note as its parent too,
+        even though that dialog is a separate top-level window — Qt
+        copies a widget's initial palette from whatever parent argument
+        it's constructed with. Result, reported live via a screenshot:
+        the dialog silently painted with the *board's* own light grey
+        background instead of the app's normal dark theme, with the
+        still-normal dark-theme text now nearly illegible on top of it.
+        Only ever reproducible for a note actually attached to a board —
+        a standalone note has no such ancestor to inherit from, which is
+        exactly why this wasn't caught by the earlier width fix (tested
+        against a standalone note only). Confirmed directly: a
+        board-parented QInputDialog's backgroundRole() color read back
+        the board's own #e0e0e0 instead of the theme's normal dark navy,
+        and explicitly resetting the palette afterward (even after
+        show()) didn't reliably stick before the first paint. Passing no
+        parent sidesteps the inheritance entirely — same fix already used
+        for the hyperlink hover tooltip's own palette bleed — so callers
+        explicitly re-center the dialog over the note via
+        _center_dialog_over_note() instead, to keep it landing on the
+        right monitor rather than relying on implicit parent placement."""
+        dialog = QInputDialog()
+        dialog.setWindowTitle(title)
+        dialog.setLabelText(label)
+        dialog.setTextValue(initial)
+        return dialog
+
+    def _center_dialog_over_note(self, dialog: QInputDialog):
+        center = self.mapToGlobal(self.rect().center())
+        dialog.move(center - dialog.rect().center())
 
     def show_hyperlink_dialog(self):
         cursor = self.body.textCursor()
@@ -911,11 +1022,11 @@ class NoteWindow(QWidget):
         # The static QInputDialog.getText() convenience defaults to a
         # width too narrow to read/edit a typical URL comfortably —
         # build the dialog directly so it can be sized explicitly.
-        dialog = QInputDialog(self)
-        dialog.setWindowTitle("Edit Hyperlink" if existing_href else "Insert Hyperlink")
-        dialog.setLabelText("URL:")
-        dialog.setTextValue(existing_href or "https://")
+        dialog = self._new_note_dialog(
+            "Edit Hyperlink" if existing_href else "Insert Hyperlink", "URL:", existing_href or "https://"
+        )
         dialog.resize(420, dialog.sizeHint().height())
+        self._center_dialog_over_note(dialog)
         if dialog.exec() != QInputDialog.Accepted:
             return
         url = dialog.textValue()
@@ -935,27 +1046,42 @@ class NoteWindow(QWidget):
         self.mark_changed()
 
     def show_title_dialog(self):
-        title, ok = QInputDialog.getText(self, "Note Title", "Title:", text=self.note.title)
-        if not ok:
+        # The static QInputDialog.getText() convenience defaults to a
+        # width too narrow to even read its own title bar comfortably —
+        # same fix as show_hyperlink_dialog() below and NotepadWindow.
+        # rename() in board_window.py: build the dialog directly so it
+        # can be sized explicitly.
+        dialog = self._new_note_dialog("Note Title", "Title:", self.note.title)
+        # 320px still truncated the title bar itself on an unscaled
+        # (100%) monitor even though it read fine on a 125%-scaled one —
+        # see the identical fix/comment on NotepadWindow.rename() in
+        # board_window.py.
+        dialog.resize(480, dialog.sizeHint().height())
+        self._center_dialog_over_note(dialog)
+        if dialog.exec() != QInputDialog.Accepted:
             return
-        # Unlike MemoboardWindow.rename() (where an empty name just leaves
+        # Unlike NotepadWindow.rename() (where an empty name just leaves
         # the previous one in place, since a board always has *some* name),
         # a note's title is optional — clearing the field and confirming
         # removes it entirely, collapsing the title bar back away.
-        self.note.title = title.strip()
+        self.note.title = dialog.textValue().strip()
         self.title_bar.set_title(self.note.title)
         self.mark_changed()
 
     def show_insert_image_dialog(self):
+        # No parent (see _new_note_dialog's docstring) — the OS's native
+        # file picker isn't affected by this note's own palette bleed,
+        # but Qt's own non-native fallback would be, same as every other
+        # dialog fixed here.
         path, _ = QFileDialog.getOpenFileName(
-            self, "Add Picture", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)"
+            None, "Add Picture", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp)"
         )
         if not path:
             return
 
         image = QImage(path)
         if image.isNull():
-            QMessageBox.warning(self, "Add Picture", "Could not load that image file.")
+            QMessageBox.warning(None, "Add Picture", "Could not load that image file.")
             return
 
         # The note itself grows to fit the picture (see
@@ -1066,11 +1192,50 @@ class NoteWindow(QWidget):
         doc = self.body.document()
         start = min(cursor.selectionStart(), cursor.selectionEnd())
         end = max(cursor.selectionStart(), cursor.selectionEnd())
+
+        if style is None:
+            block = doc.findBlock(start)
+            while block.isValid() and block.position() < end:
+                self._apply_list_style_to_block(block, style)
+                block = block.next()
+            self.mark_changed()
+            return
+
+        # Applying a real style: blocks that don't already belong to a
+        # list must become ONE shared list per contiguous run, not one
+        # independent single-item list per block. createList() called
+        # separately for each block (the old per-block loop, still used
+        # above for removal) created N separate lists that each started
+        # counting from 1 — reported live as every item in a numbered
+        # list showing "1." instead of incrementing 1, 2, 3... Blocks
+        # that already belong to a list just get that list's own style
+        # updated in place, same as before.
         block = doc.findBlock(start)
+        run_start = None
+        run_end = None
         while block.isValid() and block.position() < end:
-            self._apply_list_style_to_block(block, style)
+            if block.textList() is not None:
+                if run_start is not None:
+                    self._create_shared_list(run_start, run_end, style)
+                    run_start = None
+                fmt = block.textList().format()
+                fmt.setStyle(style)
+                block.textList().setFormat(fmt)
+            else:
+                if run_start is None:
+                    run_start = block
+                run_end = block
             block = block.next()
+        if run_start is not None:
+            self._create_shared_list(run_start, run_end, style)
         self.mark_changed()
+
+    def _create_shared_list(self, start_block, end_block, style: QTextListFormat.Style):
+        run_cursor = QTextCursor(start_block)
+        end_pos = end_block.position() + end_block.length() - 1
+        end_pos = min(end_pos, self.body.document().characterCount() - 1)
+        run_cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
+        run_cursor.createList(QTextListFormat.Style(style))
 
     def _apply_list_style_to_block(self, block, style: QTextListFormat.Style | None):
         current_list = block.textList()
@@ -1159,12 +1324,21 @@ class NoteWindow(QWidget):
             cursor.createList(fmt)
 
         # A block's own indent level (separate from the list's nesting
-        # depth) doesn't get resynced when rejoining an existing list via
-        # QTextList.add() — left stale, it visually narrows/widens the
-        # line independent of where it actually sits in the list nesting.
-        # Force it back in sync with the list depth explicitly.
+        # depth, and normally 0 for any list item — confirmed live: a
+        # never-touched top-level item's blockFormat().indent() is 0,
+        # with only its *list's* own indent() carrying the nesting
+        # weight) doesn't get resynced when rejoining an existing list
+        # via QTextList.add(), left stale from wherever the block was
+        # before. Previously "fixed" by setting it to `new_indent - 1`,
+        # which only coincidentally lands on 0 for the first nesting
+        # level — for anything deeper it set a real, nonzero block
+        # indent *in addition to* the list's own nesting indent, adding
+        # a second, compounding indent on top of the correct one.
+        # Reported live as a sub-bullet rendering much further right
+        # than one extra nesting level should ever produce. Always 0:
+        # list nesting alone should carry all of it.
         block_fmt = cursor.blockFormat()
-        block_fmt.setIndent(new_indent - 1)
+        block_fmt.setIndent(0)
         cursor.mergeBlockFormat(block_fmt)
         self.mark_changed()
 
@@ -1185,26 +1359,49 @@ class NoteWindow(QWidget):
         self._merge_block_format_over_selection(fmt)
 
     def _merge_block_format_over_selection(self, fmt: QTextCharFormat):
-        """mergeBlockCharFormat on a selection that ends exactly at
-        EndOfBlock (e.g. selecting one line's text, not crossing into the
-        next block) corrupts that list item's cached layout rect in Qt,
-        making it stop painting entirely. Selecting through each block's
-        trailing separator instead (its full `block.length()`, not just
-        its visible text) avoids that — reproduced and confirmed via a
-        minimal QTextEdit case before landing this fix."""
+        """Only list items actually need this — mergeBlockCharFormat sets
+        the format list *markers* are painted with, which the regular
+        per-character merge in _merge_format() doesn't touch. For a plain
+        (non-list) paragraph this call does nothing useful, and touching
+        the *document's own last block* — not just "ending exactly at
+        EndOfBlock" as originally diagnosed — corrupts that block's
+        cached layout rect in Qt, collapsing it to zero size so it stops
+        painting entirely. The block-length-including-separator fix below
+        only ever prevented that for a block with a *real* following
+        block to extend the range into; the document's last block has no
+        such separator to extend into regardless, so the same corruption
+        was still reachable there all along (confirmed live: a plain,
+        listless single-line note recoloring its own only/last block, and
+        separately a single-item/last-item list recoloring its own last
+        block — backlog item 12, text visibly vanishing). Skipping
+        non-list blocks entirely sidesteps the bug for the common case,
+        but list blocks still need mergeBlockCharFormat for their marker
+        color, corruption and all — markContentsDirty() right after each
+        merge forces Qt to recompute that block's cached layout rect
+        instead of trusting the stale (zero-size) one mergeBlockCharFormat
+        itself leaves behind. Confirmed directly: without it, a
+        last-block list item's blockBoundingRect().width() reads 0 right
+        after the merge, regardless of whether the merge used a selection
+        or a bare caret; with it, the same block reads its real width and
+        renders normally, marker color and all."""
         selection_cursor = self.body.textCursor()
-        if not selection_cursor.hasSelection():
-            selection_cursor.mergeBlockCharFormat(fmt)
-            return
         doc = self.body.document()
+        if not selection_cursor.hasSelection():
+            block = selection_cursor.block()
+            if block.textList() is not None:
+                selection_cursor.mergeBlockCharFormat(fmt)
+                doc.markContentsDirty(block.position(), block.length())
+            return
         start = min(selection_cursor.selectionStart(), selection_cursor.selectionEnd())
         end = max(selection_cursor.selectionStart(), selection_cursor.selectionEnd())
         block = doc.findBlock(start)
         while block.isValid() and block.position() < end:
-            block_cursor = QTextCursor(block)
-            block_end = min(block.position() + block.length(), doc.characterCount() - 1)
-            block_cursor.setPosition(block_end, QTextCursor.KeepAnchor)
-            block_cursor.mergeBlockCharFormat(fmt)
+            if block.textList() is not None:
+                block_cursor = QTextCursor(block)
+                block_end = min(block.position() + block.length(), doc.characterCount() - 1)
+                block_cursor.setPosition(block_end, QTextCursor.KeepAnchor)
+                block_cursor.mergeBlockCharFormat(fmt)
+                doc.markContentsDirty(block.position(), block.length())
             block = block.next()
 
     def show_font_color_menu(self, anchor_widget: QWidget):
@@ -1338,28 +1535,39 @@ class NoteWindow(QWidget):
     def show_stick_window_dialog(self):
         windows = list_windows()
         if not windows:
-            QMessageBox.information(
-                self,
-                "Stick to Window",
+            # No parent (see _new_note_dialog's docstring for why) — a
+            # board-attached note's QMessageBox.information(self, ...)
+            # inherited the board's own grey background the same way
+            # every other dialog fixed here did.
+            info = QMessageBox()
+            info.setIcon(QMessageBox.Information)
+            info.setWindowTitle("Stick to Window")
+            info.setText(
                 "No other windows were found to stick this note to.\n\n"
-                + self._STICK_WINDOW_SCOPE_NOTE,
+                + self._STICK_WINDOW_SCOPE_NOTE
             )
+            self._center_dialog_over_note(info)
+            info.exec()
             return
 
-        # Window titles aren't guaranteed unique, and QInputDialog.getItem()
-        # only gives back the chosen string — appending each window's id
-        # (already unique by definition) keeps that round trip unambiguous
-        # without needing a custom list widget just to carry an id per row.
+        # Window titles aren't guaranteed unique, and the label round trip
+        # below only gives back the chosen string — appending each
+        # window's id (already unique by definition) keeps that
+        # unambiguous without needing a custom list widget just to carry
+        # an id per row.
         labels = [f"{title} (0x{window_id:x})" for window_id, title in windows]
-        label, ok = QInputDialog.getItem(
-            self,
-            "Stick to Window",
-            "Window:\n" + self._STICK_WINDOW_SCOPE_NOTE,
-            labels,
-            editable=False,
-        )
-        if not ok:
+        # QInputDialog.getItem(self, ...) is the same static-convenience
+        # class as getText() — same palette-bleed fix as
+        # _new_note_dialog(), built as a combo-box instance instead.
+        dialog = QInputDialog()
+        dialog.setWindowTitle("Stick to Window")
+        dialog.setLabelText("Window:\n" + self._STICK_WINDOW_SCOPE_NOTE)
+        dialog.setComboBoxItems(labels)
+        dialog.setComboBoxEditable(False)
+        self._center_dialog_over_note(dialog)
+        if dialog.exec() != QInputDialog.Accepted:
             return
+        label = dialog.textValue()
         index = labels.index(label)
         window_id = windows[index][0]
         self.set_stuck_to_window(window_id)
@@ -1401,8 +1609,33 @@ class NoteWindow(QWidget):
 
     def set_opacity(self, value: float):
         self.note.opacity = value
-        self.setWindowOpacity(value)
+        self._apply_opacity()
         self.mark_changed()
+
+    def _apply_opacity(self):
+        """setWindowOpacity() is silently a no-op for anything that isn't
+        a real top-level window — confirmed directly: reading it back
+        after calling it on a board-attached note stayed 1.0 regardless
+        of what was just set, since attach_to_board() reparents the note
+        to Qt.Widget (a plain child of the board's canvas) rather than
+        leaving it a Qt.Window. Reported live as changing a board note's
+        transparency doing visibly nothing. A QGraphicsOpacityEffect
+        works on any widget, window or not, so it's used instead whenever
+        this note isn't currently its own top-level window; switched back
+        to the normal (compositor-accelerated, no offscreen-buffer
+        overhead) setWindowOpacity() otherwise, since that's still the
+        better mechanism for a standalone note and was already working
+        fine for it."""
+        if self.isWindow():
+            if self.graphicsEffect() is not None:
+                self.setGraphicsEffect(None)
+            self.setWindowOpacity(self.note.opacity)
+        else:
+            effect = self.graphicsEffect()
+            if not isinstance(effect, QGraphicsOpacityEffect):
+                effect = QGraphicsOpacityEffect(self)
+                self.setGraphicsEffect(effect)
+            effect.setOpacity(self.note.opacity)
 
     # -- roll up / down ----------------------------------------------------
 
@@ -1423,11 +1656,29 @@ class NoteWindow(QWidget):
             self._expanded_height = self.height()
             self.body.hide()
             self.footer.hide()
+            # Rolling up shrinks the whole window to just HEADER_HEIGHT —
+            # title_bar/find_bar are two more strips between the header
+            # and body that were never included in that math, so leaving
+            # either visible crammed everything into a sliver instead of
+            # actually hiding along with the body. Reported live via a
+            # screenshot (a titled note collapsing into a garbled mess of
+            # squashed text) and reproduced exactly. find_bar is a
+            # transient tool, not persisted note content, so it's just
+            # force-hidden here rather than reopened on unroll below —
+            # closing it is the expected side effect of rolling up, same
+            # as it doesn't reopen itself after any other reason it might
+            # have been hidden.
+            self.title_bar.hide()
+            self.find_bar.hide()
             self.setMinimumHeight(HEADER_HEIGHT)
             self.resize(self.width(), HEADER_HEIGHT)
         else:
             self.body.show()
             self.footer.show()
+            # Only re-shows for a note that actually has a title — same
+            # rule set_title() itself already applies, so an untitled
+            # note doesn't grow a blank title strip back on unroll.
+            self.title_bar.set_title(self.note.title)
             self.setMinimumHeight(120)
             self.resize(self.width(), self._expanded_height)
         self._update_header_style()
@@ -1457,6 +1708,13 @@ class NoteWindow(QWidget):
             # See _build_ui()'s size_grip comment: wrong resize target and
             # a rendering artifact once this note is no longer top-level.
             self.size_grip.hide()
+            # No longer a real top-level window, so setWindowOpacity()
+            # (already applied, possibly to something other than 1.0)
+            # would silently stop doing anything from here on — switch to
+            # the QGraphicsOpacityEffect path now rather than leaving a
+            # transparency setting that visually reverts to opaque the
+            # moment a note lands on a board. See _apply_opacity().
+            self._apply_opacity()
         else:
             self.setParent(None)
             self._apply_standalone_flags()
@@ -1471,6 +1729,12 @@ class NoteWindow(QWidget):
             set_stays_on_top(win_id, self.note.always_on_top)
             self.note.board_id = None
             self.size_grip.show()
+            # Back to being a real top-level window — switch back to
+            # setWindowOpacity() (the graphics-effect path still works
+            # here, but costs an extra offscreen-buffer composite on
+            # every repaint for no benefit once the cheaper native
+            # mechanism is available again).
+            self._apply_opacity()
         self.mark_changed()
 
     # -- persistence hooks -------------------------------------------------
@@ -1548,7 +1812,7 @@ class NoteWindow(QWidget):
 
         Font/Bullets/Indent are skipped entirely when the selection is
         exactly one image (e.g. right-clicking a picture, which
-        _select_image_under_click turns into a one-character image
+        _position_cursor_for_click turns into a one-character image
         selection) — none of them do anything meaningful there. The
         picture-insert action and Hyperlink… stay either way: inserting a
         picture while one is already selected replaces it (a QTextCursor
@@ -1669,12 +1933,17 @@ class NoteWindow(QWidget):
         # raw EWMH "always on top" state in KWin's stacking layers (that
         # hint elevates by window layer, not just parent/child order) —
         # force the dialog on top too so it can't end up hidden behind an
-        # always-on-top note.
-        box = QMessageBox(self)
+        # always-on-top note. No parent (see _new_note_dialog's docstring)
+        # — QMessageBox(self) inherited a board-attached note's own
+        # palette bleed the same way every other dialog fixed here did;
+        # WindowStaysOnTopHint below (not parent/child stacking) is what
+        # actually keeps this above an always-on-top note regardless.
+        box = QMessageBox()
         box.setWindowTitle("Delete Note")
         box.setText("Delete this note permanently?")
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         box.setWindowFlags(box.windowFlags() | Qt.WindowStaysOnTopHint)
+        self._center_dialog_over_note(box)
         reply = box.exec()
         if reply == QMessageBox.Yes:
             self.manager.delete_note(self)
