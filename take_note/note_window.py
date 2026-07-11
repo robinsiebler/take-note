@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, QSize, QUrl, Qt, Signal
@@ -64,6 +65,31 @@ RADIUS = 10
 # threshold) everywhere, not just against the backgrounds it happens to
 # clash with least.
 HYPERLINK_COLOR = "#1a237e"
+
+# Backlog item 22: plain-text URLs auto-detected as links at right-click
+# time only (not live as-you-type, matching this app's existing "check at
+# the point of interaction" style — e.g. the Edit Hyperlink…/Hyperlink…
+# label check). Requires an explicit http(s):// scheme rather than also
+# matching bare "www.example.com" text, to keep false positives (e.g.
+# "e.g." or a stray "file.txt") out. Trailing sentence punctuation
+# (".", ",", ")", etc. immediately after a URL in prose) is stripped from
+# the match so "See https://example.com." doesn't linkify the period too.
+_URL_PATTERN = re.compile(r"https?://\S+")
+_URL_TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
+
+
+def _detect_url_span(text: str, offset: int) -> tuple[int, int, str] | None:
+    """The [start, end) span and URL text of a plain-text URL in `text`
+    that contains character position `offset`, or None. A pure function
+    (no Qt dependency) so it's directly unit-testable against plain
+    strings rather than needing a real QTextDocument."""
+    for match in _URL_PATTERN.finditer(text):
+        start, end = match.span()
+        url = match.group().rstrip(_URL_TRAILING_PUNCTUATION)
+        end = start + len(url)
+        if start <= offset < end:
+            return start, end, url
+    return None
 
 # How much darker the header strip is than the note's own color.
 # Needs to be dark enough that white icon glyphs (ICON_BUTTON_QSS below)
@@ -376,6 +402,7 @@ class NoteBody(QTextEdit):
         # to offer while the user is mid-selection in the text, and live in
         # the header's right-click menu / hamburger menu instead.
         self._position_cursor_for_click(event.pos())
+        self.note_window._auto_linkify_at_cursor()
         menu = self.createStandardContextMenu()
         menu.setStyleSheet(get_menu_qss())
         menu.addSeparator()
@@ -1134,6 +1161,40 @@ class NoteWindow(QWidget):
         fmt.setForeground(QColor(self.manager.settings.default_font_color))
         fmt.setFontUnderline(False)
         cursor.mergeCharFormat(fmt)
+        self.mark_changed()
+
+    def _auto_linkify_at_cursor(self):
+        """Backlog item 22: a URL typed directly as plain text (never run
+        through the Hyperlink… dialog) previously stayed plain-looking
+        forever — right-clicking it showed "Hyperlink…", not "Edit
+        Hyperlink…", and offered no way to make it a real link short of
+        selecting it manually and opening the dialog. Called from
+        NoteBody.contextMenuEvent right after the cursor is repositioned
+        to the click point, so if that position is inside a detected URL,
+        it becomes a real link immediately (same anchor/color/underline
+        formatting show_hyperlink_dialog() applies) before the context
+        menu is even built — by the time populate_text_menu() reads
+        cursor.charFormat().isAnchor(), it's already true, so "Edit
+        Hyperlink…"/"Remove Hyperlink" show up correctly with no further
+        plumbing needed there."""
+        cursor = self.body.textCursor()
+        if cursor.hasSelection() or cursor.charFormat().isAnchor():
+            return
+        block = cursor.block()
+        span = _detect_url_span(block.text(), cursor.positionInBlock())
+        if span is None:
+            return
+        start, end, url = span
+
+        link_cursor = QTextCursor(block)
+        link_cursor.setPosition(block.position() + start)
+        link_cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
+        fmt = QTextCharFormat()
+        fmt.setAnchor(True)
+        fmt.setAnchorHref(url)
+        fmt.setForeground(QColor(HYPERLINK_COLOR))
+        fmt.setFontUnderline(True)
+        link_cursor.mergeCharFormat(fmt)
         self.mark_changed()
 
     def show_title_dialog(self):

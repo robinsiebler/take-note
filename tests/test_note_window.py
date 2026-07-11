@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from take_note.models import Board, Note, Settings
-from take_note.note_window import NoteWindow, find_bar_tint
+from take_note.note_window import NoteWindow, _detect_url_span, find_bar_tint
 
 
 class FakeManager:
@@ -1286,6 +1286,107 @@ def test_context_menu_shows_remove_hyperlink_only_on_a_link(qapp):
     menu_with_link = QMenu()
     win.populate_text_menu(menu_with_link)
     assert any(a.text() == "Remove Hyperlink" for a in menu_with_link.actions())
+
+
+def test_detect_url_span_finds_url_containing_the_offset():
+    url = "https://example.com/page"
+    text = f"Check out {url} for details"
+    span = _detect_url_span(text, offset=15)
+    assert span == (text.index(url), text.index(url) + len(url), url)
+
+
+def test_detect_url_span_strips_trailing_sentence_punctuation():
+    url = "https://example.com"
+    text = f"See {url}."
+    span = _detect_url_span(text, offset=6)
+    assert span == (text.index(url), text.index(url) + len(url), url)
+
+
+def test_detect_url_span_returns_none_outside_any_url():
+    text = "Check out https://example.com/page for details"
+    assert _detect_url_span(text, offset=2) is None
+    assert _detect_url_span(text, offset=40) is None
+
+
+def test_detect_url_span_returns_none_for_bare_domain_without_scheme():
+    assert _detect_url_span("Visit www.example.com today", offset=8) is None
+
+
+def test_auto_linkify_turns_a_plain_url_into_a_real_link_at_right_click(qapp):
+    """Backlog item 22: a URL typed as plain text (never run through the
+    Hyperlink… dialog) becomes a real link the moment it's right-clicked
+    — detection only runs at the point of interaction, not live as-you-
+    type, matching this app's existing style elsewhere."""
+    url = "https://example.com/page"
+    text = f"Check out {url} for details"
+    win = make_note_window(text)
+    caret = win.body.textCursor()
+    caret.setPosition(15)  # inside the URL
+    win.body.setTextCursor(caret)
+
+    win._auto_linkify_at_cursor()
+
+    start = text.index(url)
+    check = win.body.textCursor()
+    check.setPosition(start)
+    check.setPosition(start + len(url), QTextCursor.KeepAnchor)
+    fmt = check.charFormat()
+    assert fmt.isAnchor()
+    assert fmt.anchorHref() == url
+    assert fmt.fontUnderline()
+    assert win.body.toPlainText() == text
+
+
+def test_auto_linkify_does_nothing_outside_a_url(qapp):
+    win = make_note_window("Just plain text")
+    caret = win.body.textCursor()
+    caret.setPosition(2)
+    win.body.setTextCursor(caret)
+
+    win._auto_linkify_at_cursor()
+
+    check = win.body.textCursor()
+    check.movePosition(QTextCursor.Start)
+    assert not check.charFormat().isAnchor()
+
+
+def test_auto_linkify_does_nothing_on_an_existing_link(qapp):
+    """Confirms auto-linkify doesn't clobber a link that already has its
+    own real anchor formatting (e.g. inserted via the Hyperlink… dialog
+    with a different display href than what the plain text would say)."""
+    win = make_note_window("Click here")
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://custom-url.example")
+    select_all(win)
+    win.body.textCursor().mergeCharFormat(fmt)
+    caret = win.body.textCursor()
+    caret.setPosition(2)
+    win.body.setTextCursor(caret)
+
+    win._auto_linkify_at_cursor()
+
+    check = win.body.textCursor()
+    check.movePosition(QTextCursor.Start)
+    assert check.charFormat().anchorHref() == "https://custom-url.example"
+
+
+def test_auto_linkify_then_menu_shows_edit_label_not_insert(qapp):
+    """Confirms the two pieces compose correctly: once
+    _auto_linkify_at_cursor() has turned the plain URL into a real link,
+    populate_text_menu() (which contextMenuEvent calls right after) reads
+    that same cursor state and already offers "Edit Hyperlink…", not
+    "Hyperlink…" — no extra plumbing needed between the two."""
+    win = make_note_window("Check out https://example.com/page for details")
+    caret = win.body.textCursor()
+    caret.setPosition(15)
+    win.body.setTextCursor(caret)
+
+    win._auto_linkify_at_cursor()
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    assert any(a.text() == "Edit Hyperlink…" for a in menu.actions())
 
 
 def test_context_menu_label_reads_edit_hyperlink_inside_existing_link(qapp):
