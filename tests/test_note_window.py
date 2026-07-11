@@ -818,6 +818,39 @@ def test_default_new_note_format_applied_to_genuinely_empty_note(qapp, monkeypat
     assert calls == [1]
 
 
+def test_constructing_a_note_does_not_bump_its_modified_at(qapp):
+    """Regression, reported live: launching the real app and quitting
+    again with zero interaction bumped every note's modified_at anyway —
+    confirmed via a real subprocess launch+quit against a scratch
+    XDG_DATA_HOME. Root cause: setHtml(note.html) in __init__ (restoring
+    a loaded note's saved content) fires textChanged, which is connected
+    to mark_changed() — completely independent of moveEvent/resizeEvent
+    (also guarded, for the same reason: resize()/move() in __init__
+    restoring a loaded note's saved geometry fires those too). Both are
+    covered by the same _initializing guard on mark_changed() itself,
+    since nothing is connected to `changed` yet during construction
+    anyway (NoteManager wires that up only after the constructor
+    returns), so skipping it there loses nothing real."""
+    original_modified_at = "2020-01-01T00:00:00+00:00"
+    note = Note(html="<p>Existing content</p>", modified_at=original_modified_at)
+
+    win = NoteWindow(note, manager=FakeManager())
+
+    assert win.note.modified_at == original_modified_at
+
+
+def test_real_edit_after_construction_still_bumps_modified_at(qapp):
+    """Sanity check for the fix above: the guard only applies during
+    construction — a real edit afterward must still update modified_at
+    normally, or notes would never show as modified at all."""
+    original_modified_at = "2020-01-01T00:00:00+00:00"
+    win = NoteWindow(Note(html="<p>Existing content</p>", modified_at=original_modified_at), manager=FakeManager())
+
+    win.mark_changed()
+
+    assert win.note.modified_at != original_modified_at
+
+
 def test_default_new_note_format_still_applied_after_a_save_without_typing(qapp, monkeypatch):
     """Regression: QTextEdit.toHtml() on an empty document returns Qt's
     own ~600-char boilerplate wrapper, not an empty string. A note saved
