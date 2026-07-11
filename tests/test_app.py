@@ -151,6 +151,7 @@ def _fake_manager_for_create_note(settings) -> Mock:
     manager.notes = {}
     manager.boards = {}
     manager.settings = settings
+    manager._new_note_cascade_offset = 0
     return manager
 
 
@@ -172,3 +173,45 @@ def test_create_note_uses_random_color_when_randomizing(qapp, monkeypatch):
 
     assert note_window.note.color == SWATCHES[3]
     assert note_window.note.color != "#a5d6a7"
+
+
+def test_create_note_staggers_each_standalone_note_from_the_last(qapp):
+    """Regression: every new standalone note used to appear at the exact
+    same fixed default position, giving no visible sign a new note was
+    even created."""
+    manager = _fake_manager_for_create_note(Settings())
+    default_x, default_y = Note().x, Note().y
+
+    first = NoteManager.create_note(manager)
+    second = NoteManager.create_note(manager)
+    third = NoteManager.create_note(manager)
+
+    assert (first.note.x, first.note.y) == (default_x, default_y)
+    assert (second.note.x, second.note.y) == (default_x + 24, default_y + 24)
+    assert (third.note.x, third.note.y) == (default_x + 48, default_y + 48)
+
+
+def test_create_note_cascade_wraps_around_instead_of_drifting_forever(qapp):
+    manager = _fake_manager_for_create_note(Settings())
+    manager._new_note_cascade_offset = app_module.CASCADE_OFFSET * 9
+
+    NoteManager.create_note(manager)
+
+    assert manager._new_note_cascade_offset == 0
+
+
+def test_create_note_on_a_board_does_not_apply_the_cascade_offset(qapp):
+    """A board-attached note already gets a real position (the actual
+    right-click point or a fixed (20, 20) default) via a separate code
+    path — the cascade is only for the standalone-desktop-note case."""
+    from take_note.board_window import NotepadWindow
+    from take_note.models import Board
+
+    manager = _fake_manager_for_create_note(Settings())
+    manager._new_note_cascade_offset = 24
+    board_window = NotepadWindow(Board(), manager)
+
+    note_window = NoteManager.create_note(manager, board=board_window)
+
+    assert (note_window.note.x, note_window.note.y) == (20, 20)
+    assert manager._new_note_cascade_offset == 24  # unchanged

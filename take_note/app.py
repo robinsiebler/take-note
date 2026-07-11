@@ -37,6 +37,14 @@ class NoteManager(QObject):
         self.notes: dict[str, NoteWindow] = {}
         self.boards: dict[str, NotepadWindow] = {}
         self.notes_browser: "NotesBrowserWindow | None" = None
+        # Cascades each new standalone note CASCADE_OFFSET further from the
+        # last, so creating several in a row doesn't stack them exactly on
+        # top of each other (confusing — no visible sign a new note even
+        # appeared). Wraps back to 0 after a few steps rather than
+        # drifting the notes off-screen forever. Session-only, like the
+        # bulk show/hide actions — not worth persisting just to remember
+        # exactly where the cascade left off across a restart.
+        self._new_note_cascade_offset = 0
 
         # Settings must be known before the hotkey listener is created, so
         # read them here; load_from_disk() re-reads (along with notes/boards)
@@ -100,6 +108,16 @@ class NoteManager(QObject):
         if board is not None:
             note.board_id = board.board.id
             note.x, note.y = (pos.x(), pos.y()) if pos is not None else (20, 20)
+        else:
+            # A board-attached note already gets a real position above (the
+            # actual right-click point, or a fixed (20, 20) default) — this
+            # only staggers the standalone-desktop-note path, which
+            # otherwise always used the same fixed default position.
+            note.x += self._new_note_cascade_offset
+            note.y += self._new_note_cascade_offset
+            self._new_note_cascade_offset = (self._new_note_cascade_offset + CASCADE_OFFSET) % (
+                CASCADE_OFFSET * 10
+            )
 
         note_window = NoteWindow(note, self, parent_board=board)
         self._wire_note(note_window)
