@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from .models import Board
 from .note_window import ICON_BUTTON_QSS, RADIUS, NoteWindow, get_menu_qss, header_shade
+from .x11_wm import set_skip_taskbar
 
 HEADER_HEIGHT = 24
 
@@ -138,7 +139,16 @@ class NotepadWindow(QWidget):
         self.board = board
         self.manager = manager
 
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        # Qt.Window (Normal type), not Qt.Tool (Utility type) — same fix,
+        # same reason as NoteWindow's own STANDALONE_FLAGS (see that
+        # comment in note_window.py): KWin keeps Utility-type windows in
+        # an elevated stacking layer above Normal windows regardless of
+        # state hints, which left an open board permanently rendering
+        # above every note (reported live, intermittent/hard to force on
+        # demand, but this is the same documented mechanism already fixed
+        # for notes). Taskbar/pager hiding moves to set_skip_taskbar()
+        # below accordingly, same as notes.
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setMinimumSize(240, 200)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
@@ -148,6 +158,7 @@ class NotepadWindow(QWidget):
         self.resize(board.w, board.h)
         self.move(board.x, board.y)
         self.show()
+        set_skip_taskbar(int(self.winId()), True)
         self.canvas.grow_to_fit()
 
     def _build_ui(self):
