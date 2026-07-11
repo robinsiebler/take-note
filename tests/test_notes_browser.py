@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
 from take_note.models import Board, Note, Settings
-from take_note.notes_browser import ALL_NOTES, UNFILED, NotesBrowserWindow
+from take_note.notes_browser import ALL_NOTES, UNFILED, NotesBrowserWindow, _format_modified
 
 
 def _note_window(body_text: str = "", **kwargs) -> Mock:
@@ -33,6 +33,28 @@ def _fake_manager(notes=None, boards=None, settings=None) -> Mock:
 
 def _tree_labels(browser: NotesBrowserWindow) -> list[str]:
     return [browser.tree.topLevelItem(i).text(0) for i in range(browser.tree.topLevelItemCount())]
+
+
+def test_format_modified_converts_utc_to_local_time():
+    """Regression, reported live: displayed "07:11 PM" when the actual
+    local wall-clock time was 12:33 PM — datetime.fromisoformat() on a
+    UTC-offset string produces a timezone-aware datetime still set to
+    UTC, and strftime() alone doesn't convert it. Deliberately doesn't
+    hardcode an expected local time (would be fragile to whatever
+    timezone the test happens to run in) — instead checks against the
+    exact same astimezone() conversion the fix itself performs, so
+    what's actually being verified is that the conversion happens at
+    all, not a guessed specific local time."""
+    from datetime import datetime
+
+    utc_iso = "2026-07-11T19:32:19.041089+00:00"
+    expected_local = datetime.fromisoformat(utc_iso).astimezone().strftime("%B %d, %Y %I:%M %p")
+
+    assert _format_modified(utc_iso) == expected_local
+
+
+def test_format_modified_returns_raw_string_for_unparseable_input():
+    assert _format_modified("not a real timestamp") == "not a real timestamp"
 
 
 def test_tree_has_all_notes_and_unfiled_plus_one_item_per_board(qapp):

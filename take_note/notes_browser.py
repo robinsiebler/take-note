@@ -30,10 +30,19 @@ UNFILED = "__unfiled__"
 
 def _format_modified(iso_timestamp: str) -> str:
     """note.modified_at is a full ISO-8601 string with microseconds and a
-    timezone offset — far too wide for a table column, and not the US
-    date convention the user wants displayed here."""
+    UTC offset — far too wide for a table column, and not the US date
+    convention the user wants displayed here.
+
+    Regression, reported live: this displayed "07:11 PM" when the actual
+    local wall-clock time was 12:33 PM. datetime.fromisoformat() on a
+    string with a UTC offset produces a timezone-*aware* datetime still
+    set to UTC — strftime() formats whatever fields that object holds
+    without converting them, so the raw UTC hour/minute got displayed
+    mislabeled as if they were already local time. astimezone() with no
+    argument converts an aware datetime to the system's local timezone
+    first."""
     try:
-        return datetime.fromisoformat(iso_timestamp).strftime("%B %d, %Y %I:%M %p")
+        return datetime.fromisoformat(iso_timestamp).astimezone().strftime("%B %d, %Y %I:%M %p")
     except ValueError:
         return iso_timestamp
 
