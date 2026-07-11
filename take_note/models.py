@@ -136,6 +136,12 @@ class Settings:
     notes_browser_w: int | None = None
     notes_browser_h: int | None = None
 
+    # Same pattern as notes_browser_x/y/w/h above, for SettingsDialog.
+    settings_dialog_x: int | None = None
+    settings_dialog_y: int | None = None
+    settings_dialog_w: int | None = None
+    settings_dialog_h: int | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 

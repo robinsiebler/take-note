@@ -200,6 +200,14 @@ class NoteManager(QObject):
         dialog.applied.connect(self._apply_settings)
         if dialog.exec():
             self._apply_settings(dialog.result_settings())
+        else:
+            # Cancelled — no setting change to apply, but the dialog's
+            # own moveEvent/resizeEvent already wrote its latest geometry
+            # directly into self.settings (same object, passed by
+            # reference), so it still needs a save to actually reach
+            # disk, matching the fact that window position isn't a
+            # "setting" the user is choosing to discard by cancelling.
+            self._schedule_save()
 
     def _apply_settings(self, new_settings: Settings):
         hotkey_changed = new_settings.hotkey != self.settings.hotkey

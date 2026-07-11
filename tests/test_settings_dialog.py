@@ -122,6 +122,46 @@ def test_apply_button_emits_result_settings_without_closing(qapp):
     assert dialog.result() != QDialog.Accepted
 
 
+def test_restores_saved_dialog_geometry(qapp):
+    settings = Settings(settings_dialog_x=50, settings_dialog_y=60, settings_dialog_w=500, settings_dialog_h=400)
+
+    dialog = SettingsDialog(settings)
+
+    assert dialog.size().width() == 500
+    assert dialog.size().height() == 400
+    assert dialog.pos().x() == 50
+    assert dialog.pos().y() == 60
+
+
+def test_resizing_persists_geometry_into_the_same_settings_object(qapp):
+    """settings passed into the dialog is the same object NoteManager
+    holds, not a copy — moveEvent/resizeEvent write directly into it so
+    geometry survives even if the dialog is later cancelled."""
+    settings = Settings()
+    dialog = SettingsDialog(settings)
+    dialog.show()
+
+    dialog.resize(700, 600)
+    dialog.move(70, 80)
+
+    assert settings.settings_dialog_w == 700
+    assert settings.settings_dialog_h == 600
+    assert settings.settings_dialog_x == 70
+    assert settings.settings_dialog_y == 80
+
+
+def test_result_settings_preserves_dialog_geometry(qapp):
+    settings = Settings(settings_dialog_x=50, settings_dialog_y=60, settings_dialog_w=500, settings_dialog_h=400)
+    dialog = SettingsDialog(settings)
+
+    result = dialog.result_settings()
+
+    assert result.settings_dialog_x == 50
+    assert result.settings_dialog_y == 60
+    assert result.settings_dialog_w == 500
+    assert result.settings_dialog_h == 400
+
+
 def test_test_hotkey_recognizes_unchanged_current_combo(qapp):
     """Regression: testing the combo that's already this app's own live
     global hotkey always "failed" — the app's real HotkeyListener (in

@@ -53,6 +53,28 @@ class SettingsDialog(QDialog):
         )
         layout.addWidget(buttons)
 
+        self._restore_geometry()
+
+    def _restore_geometry(self):
+        # self._settings is the same object NoteManager holds (passed by
+        # reference, not copied), so writing into it directly here — same
+        # pattern as NotesBrowserWindow's notes_browser_x/y/w/h — persists
+        # regardless of whether the dialog is ultimately OK'd or
+        # cancelled, since window chrome position isn't really a "setting"
+        # the user is choosing to discard.
+        if self._settings.settings_dialog_w and self._settings.settings_dialog_h:
+            self.resize(self._settings.settings_dialog_w, self._settings.settings_dialog_h)
+        if self._settings.settings_dialog_x is not None and self._settings.settings_dialog_y is not None:
+            self.move(self._settings.settings_dialog_x, self._settings.settings_dialog_y)
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._settings.settings_dialog_x, self._settings.settings_dialog_y = self.x(), self.y()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._settings.settings_dialog_w, self._settings.settings_dialog_h = self.width(), self.height()
+
     # -- General tab -------------------------------------------------------
 
     def _build_general_tab(self) -> QWidget:
@@ -227,6 +249,10 @@ class SettingsDialog(QDialog):
             notes_browser_y=self._settings.notes_browser_y,
             notes_browser_w=self._settings.notes_browser_w,
             notes_browser_h=self._settings.notes_browser_h,
+            settings_dialog_x=self._settings.settings_dialog_x,
+            settings_dialog_y=self._settings.settings_dialog_y,
+            settings_dialog_w=self._settings.settings_dialog_w,
+            settings_dialog_h=self._settings.settings_dialog_h,
         )
 
     def closeEvent(self, event):
