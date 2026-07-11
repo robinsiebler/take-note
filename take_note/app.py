@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 from . import autostart, storage
 from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
-from .models import SWATCHES, Board, Note
+from .models import SWATCHES, Board, Note, Settings
 from .note_window import NoteWindow
 from .notes_browser import NotesBrowserWindow
 from .settings_dialog import SettingsDialog
@@ -193,20 +193,27 @@ class NoteManager(QObject):
         self.settings.launch_at_login = autostart.is_enabled()
 
         dialog = SettingsDialog(self.settings)
+        # Apply live-applies without closing the dialog; OK still goes
+        # through the same _apply_settings() after exec() returns, so
+        # clicking Apply once and then OK just re-applies identically
+        # unchanged settings rather than double-applying anything.
+        dialog.applied.connect(self._apply_settings)
         if dialog.exec():
-            new_settings = dialog.result_settings()
-            hotkey_changed = new_settings.hotkey != self.settings.hotkey
-            self.settings = new_settings
+            self._apply_settings(dialog.result_settings())
 
-            if new_settings.launch_at_login:
-                autostart.enable()
-            else:
-                autostart.disable()
+    def _apply_settings(self, new_settings: Settings):
+        hotkey_changed = new_settings.hotkey != self.settings.hotkey
+        self.settings = new_settings
 
-            if hotkey_changed:
-                self._restart_hotkey_listener()
+        if new_settings.launch_at_login:
+            autostart.enable()
+        else:
+            autostart.disable()
 
-            self._schedule_save()
+        if hotkey_changed:
+            self._restart_hotkey_listener()
+
+        self._schedule_save()
 
     def _start_hotkey_listener(self):
         key, modifiers = parse_shortcut(self.settings.hotkey)

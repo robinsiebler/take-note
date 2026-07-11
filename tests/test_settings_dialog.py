@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QToolButton
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QToolButton
 
 from take_note.models import FONT_SWATCHES, Settings
 from take_note.settings_dialog import SettingsDialog
@@ -103,6 +103,23 @@ def test_result_settings_preserves_notes_browser_geometry(qapp):
     assert result.notes_browser_y == 60
     assert result.notes_browser_w == 800
     assert result.notes_browser_h == 500
+
+
+def test_apply_button_emits_result_settings_without_closing(qapp):
+    """Regression: the dialog previously only had OK/Cancel, so trying a
+    setting change required closing (and possibly reopening) the dialog
+    to adjust further. Apply must emit the same Settings result_settings()
+    would build, without accepting/closing the dialog."""
+    dialog = SettingsDialog(Settings(default_font_size=12))
+    dialog.font_size_spin.setValue(18)
+
+    applied = []
+    dialog.applied.connect(applied.append)
+    dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Apply).click()
+
+    assert len(applied) == 1
+    assert applied[0].default_font_size == 18
+    assert dialog.result() != QDialog.Accepted
 
 
 def test_test_hotkey_recognizes_unchanged_current_combo(qapp):

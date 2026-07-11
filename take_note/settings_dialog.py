@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -22,6 +23,14 @@ from .widgets import build_color_swatch_grid
 
 
 class SettingsDialog(QDialog):
+    # Emitted only by the Apply button, carrying the same Settings that
+    # result_settings() would build — lets a setting (e.g. a font/color
+    # change) take effect immediately without closing the dialog. OK
+    # keeps going through the existing post-exec() result_settings() path
+    # in NoteManager.open_settings() instead of this signal, so nothing
+    # about the OK/Cancel behavior changes.
+    applied = Signal(Settings)
+
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -36,9 +45,12 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_general_tab(), "General")
         tabs.addTab(self._build_hotkey_tab(), "Hotkey")
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(
+            lambda: self.applied.emit(self.result_settings())
+        )
         layout.addWidget(buttons)
 
     # -- General tab -------------------------------------------------------
