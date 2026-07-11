@@ -1962,6 +1962,28 @@ def test_select_image_at_moves_plain_text_click_without_selecting(qapp):
     assert win.body.textCursor().position() == 3
 
 
+def test_select_image_at_preserves_ambient_format_on_empty_note(qapp):
+    """Reported live: right-clicking a brand-new, never-typed note (e.g.
+    to open Font…) showed the wrong font size — the app's base font
+    instead of the configured default. Root cause: the default font/color
+    set by _apply_default_new_note_format() lives only in the outgoing
+    cursor's in-memory current-char-format, since an empty document has
+    no real character to carry it — replacing the cursor via
+    setTextCursor() below (what every right-click does, through
+    _position_cursor_for_click) silently discarded it. Regression guard
+    for that discard, not for anything image-related."""
+    class CustomManager:
+        boards = {}
+        settings = Settings(default_font_size=22)
+
+    win = NoteWindow(Note(), manager=CustomManager())
+    assert win.body.currentCharFormat().fontPointSize() == 22
+
+    win.body._select_image_at(0)
+
+    assert win.body.currentCharFormat().fontPointSize() == 22
+
+
 def test_select_image_at_leaves_existing_selection_when_click_inside_it(qapp):
     """Matches ordinary right-click behavior elsewhere in the app: clicking
     inside an existing multi-character selection keeps it (so Cut/Copy/

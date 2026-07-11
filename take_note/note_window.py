@@ -459,9 +459,21 @@ class NoteBody(QTextEdit):
         # collapsed caret there so hyperlink/format checks that follow
         # (Edit Hyperlink's URL prefill, Bullets & Numbering's checked
         # style, ...) read the click position instead of stale state.
+        # On a brand-new, never-typed note there's no real character
+        # anywhere for the configured default font/color (applied via
+        # mergeCurrentCharFormat in _apply_default_new_note_format) to
+        # live on — it exists only in the outgoing cursor's in-memory
+        # state, which setTextCursor() below discards wholesale. Confirmed
+        # directly: right-clicking such a note silently reset its ambient
+        # font size back to the app's base font, so the very first time
+        # Font… was opened on a never-typed note it showed the wrong
+        # size. Reapplying the ambient format afterward keeps it intact.
+        ambient_format = self.currentCharFormat() if not doc.toPlainText() else None
         plain = QTextCursor(doc)
         plain.setPosition(position)
         self.setTextCursor(plain)
+        if ambient_format is not None:
+            self.mergeCurrentCharFormat(ambient_format)
 
     def keyPressEvent(self, event):
         # Tab/Shift+Tab indent or dedent the current list item, matching
