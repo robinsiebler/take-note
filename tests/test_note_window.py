@@ -63,6 +63,26 @@ def test_set_list_style_creates_list(qapp):
     assert block.textList().format().style() == QTextListFormat.ListDecimal
 
 
+def test_set_list_style_on_multiline_selection_creates_one_shared_list(qapp):
+    """Regression: creating a list from a multi-line selection called
+    createList() separately per block, producing N independent
+    single-item lists instead of one shared list — each one started
+    counting from 1, so every item in a numbered list showed "1."
+    instead of incrementing 1, 2, 3, 4. Reported live after converting a
+    4-item bulleted list to numbers and seeing every line read "1."."""
+    win = make_note_window("carrots\ncelery\nbacon\nbread")
+    select_all(win)
+
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    doc = win.body.document()
+    lists = [doc.findBlockByNumber(i).textList() for i in range(4)]
+    assert len({id(lst) for lst in lists}) == 1, "expected one shared list, got several"
+    for i in range(4):
+        block = doc.findBlockByNumber(i)
+        assert block.textList().itemNumber(block) == i
+
+
 def test_set_list_style_none_removes_list(qapp):
     win = make_note_window("Item one")
     select_all(win)
@@ -151,6 +171,31 @@ def test_decrease_indent_rejoins_parent_list_and_resyncs_block_indent(qapp):
     gamma_block = doc.findBlockByNumber(2)
     assert gamma_block.textList() is alpha_block.textList()
     assert gamma_block.blockFormat().indent() == alpha_block.blockFormat().indent()
+
+
+def test_increase_indent_does_not_compound_block_indent_at_deeper_levels(qapp):
+    """Regression: the block-indent resync above used `new_indent - 1` as
+    the "correct" absolute indent value, which only coincidentally equals
+    0 at the first nesting level — for anything deeper it left a real,
+    nonzero block indent stacked *on top of* the list's own nesting
+    indent, compounding at every level. Reported live as a sub-bullet
+    rendering much further right than one extra nesting level should
+    produce. A list item's own blockFormat().indent() should always stay
+    0 — the list's own indent() alone carries the nesting weight,
+    confirmed by checking a never-touched top-level item."""
+    win = make_note_window("Alpha\nBeta")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDisc)
+
+    goto_block(win, 1)
+    win._increase_indent()  # level 2, brand-new list (no adjacent sibling)
+
+    doc = win.body.document()
+    alpha_block = doc.findBlockByNumber(0)
+    beta_block = doc.findBlockByNumber(1)
+    assert alpha_block.blockFormat().indent() == 0
+    assert beta_block.blockFormat().indent() == 0
+    assert beta_block.textList().format().indent() == alpha_block.textList().format().indent() + 1
 
 
 def test_decrease_indent_below_top_level_removes_list(qapp):
@@ -252,6 +297,116 @@ def test_set_text_color_recolors_list_marker_without_corrupting_layout(qapp):
     assert block0.charFormat().foreground().color().name() == "#c62828"
 
 
+def test_set_text_color_on_plain_last_block_does_not_corrupt_layout(qapp):
+    """Regression: the fix above only ever prevented the corruption for a
+    block with a real *following* block to extend the merge range into —
+    the document's own last block has no such separator to extend into
+    regardless, so a plain (non-list) single-line note recoloring its
+    own only/last block hit the identical corruption (collapsed to zero
+    size, stopped painting) despite never touching a list. Reported live
+    as "the text literally disappeared" after applying Font Color to a
+    selection on an ordinary note. Fixed by skipping the block-level
+    merge entirely for non-list blocks — it only exists to recolor list
+    markers, which a plain paragraph doesn't have."""
+    win = make_note_window("This is a test")
+    select_all(win)
+
+    win._set_text_color("#e65100")
+    qapp.processEvents()
+
+    doc = win.body.document()
+    layout = doc.documentLayout()
+    block0 = doc.findBlockByNumber(0)
+    rect = layout.blockBoundingRect(block0)
+    assert rect.width() > 0
+    assert rect.height() > 0
+    assert win.body.toPlainText() == "This is a test"
+
+
+def test_set_text_color_on_partial_selection_of_only_block_does_not_corrupt_layout(qapp):
+    """Even a selection that doesn't reach the block's end at all (just
+    the first word) triggered the same corruption — the block-level
+    merge always re-derives its own range from the whole block's length,
+    not the actual selection's real endpoints, so any selection merely
+    touching the document's last block was enough."""
+    win = make_note_window("This is a test")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.WordRight, QTextCursor.KeepAnchor)
+    win.body.setTextCursor(cursor)
+
+    win._set_text_color("#e65100")
+    qapp.processEvents()
+
+    doc = win.body.document()
+    layout = doc.documentLayout()
+    block0 = doc.findBlockByNumber(0)
+    rect = layout.blockBoundingRect(block0)
+    assert rect.width() > 0
+    assert rect.height() > 0
+    assert win.body.toPlainText() == "This is a test"
+
+
+def test_set_text_color_on_list_items_last_block_does_not_corrupt_layout(qapp):
+    """Regression (backlog item 12, test case 3.4 — text visibly
+    vanishing when Font Color is applied): the plain-paragraph fix above
+    only skips the block-level merge for *non-list* blocks, since that
+    merge exists solely to recolor list markers — but a list item that's
+    also the document's last block (a single-item list, or just the last
+    item of any list) still needs that merge, and still hit the identical
+    corruption doing it. Confirmed directly: mergeBlockCharFormat leaves
+    a stale, zero-size cached layout rect behind regardless of whether it
+    was reached via a selection or a bare caret. Fixed by calling
+    document().markContentsDirty() on that block right after the merge,
+    forcing Qt to recompute the real layout instead of trusting the
+    stale one mergeBlockCharFormat leaves behind."""
+    win = make_note_window("Fix Dinner")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+    select_all(win)
+
+    win._set_text_color("#c62828")
+    qapp.processEvents()
+
+    doc = win.body.document()
+    layout = doc.documentLayout()
+    block0 = doc.findBlockByNumber(0)
+    rect = layout.blockBoundingRect(block0)
+    assert rect.width() > 0
+    assert rect.height() > 0
+    assert win.body.toPlainText() == "Fix Dinner"
+    assert block0.charFormat().foreground().color().name() == "#c62828"
+
+
+def test_set_text_color_on_single_item_list_via_caret_does_not_corrupt_layout(qapp):
+    """Same bug, reached via a bare caret (no selection) rather than a
+    selection — the no-selection branch of
+    _merge_block_format_over_selection needs the same fix as the
+    selection-based one above. Confirmed this specific shape (a
+    single-item list, caret-only) is what actually exercises that
+    no-selection branch's corruption; a multi-item list with the caret
+    just in its last item didn't reproduce it, since that block still
+    has other list siblings for Qt's layout cache to stay consistent
+    against — only reachable when the block is genuinely alone."""
+    win = make_note_window("Fix Dinner")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)  # caret only, no selection
+    win.body.setTextCursor(cursor)
+    win._set_text_color("#2e7d32")
+    qapp.processEvents()
+
+    doc = win.body.document()
+    layout = doc.documentLayout()
+    last_block = doc.findBlockByNumber(0)
+    rect = layout.blockBoundingRect(last_block)
+    assert rect.width() > 0
+    assert rect.height() > 0
+    assert last_block.charFormat().foreground().color().name() == "#2e7d32"
+
+
 def test_indent_width_smaller_than_qt_default(qapp):
     win = make_note_window()
     assert win.body.document().indentWidth() < 40.0
@@ -276,19 +431,25 @@ def test_indent_width_fits_widest_common_list_marker(qapp):
 def test_delete_confirmation_dialog_forces_stays_on_top(qapp, monkeypatch):
     """Regression: a plain child QMessageBox didn't reliably outrank this
     note's own raw EWMH always-on-top state in KWin's stacking layers,
-    so the delete confirmation could end up hidden behind the note."""
+    so the delete confirmation could end up hidden behind the note.
+    Also verifies the later, separate palette-bleed fix (see
+    _new_note_dialog's docstring): QMessageBox(self) used to inherit a
+    board-attached note's own grey palette, making a destructive-action
+    confirmation nearly illegible — no parent sidesteps that."""
     win = make_note_window()
 
     captured = {}
 
     def fake_exec(self):
         captured["stays_on_top"] = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        captured["parent"] = self.parent()
         return QMessageBox.No
 
     monkeypatch.setattr(QMessageBox, "exec", fake_exec)
     win.confirm_delete()
 
     assert captured["stays_on_top"] is True
+    assert captured["parent"] is None
 
 
 def test_bullets_menu_checks_none_for_plain_note(qapp):
@@ -472,24 +633,54 @@ def test_default_new_note_format_applied_to_genuinely_empty_note(qapp, monkeypat
     assert calls == [1]
 
 
+def test_default_new_note_format_still_applied_after_a_save_without_typing(qapp, monkeypatch):
+    """Regression: QTextEdit.toHtml() on an empty document returns Qt's
+    own ~600-char boilerplate wrapper, not an empty string. A note saved
+    once while still empty (e.g. rolled up and quit before ever being
+    typed into) persisted that boilerplate as note.html — `if not
+    note.html:` then read false on the next launch, silently skipping
+    the default-format step, so text typed after a reload picked up
+    whatever Qt's own unset format resolves to instead of the
+    configured black default."""
+    win = make_note_window()  # genuinely empty
+    win.sync_model()  # same call NoteManager makes just before saving
+    assert win.note.html  # confirms the boilerplate-not-empty premise
+
+    calls = []
+    monkeypatch.setattr(
+        NoteWindow, "_apply_default_new_note_format", lambda self: calls.append(1)
+    )
+    NoteWindow(win.note, manager=FakeManager())
+
+    assert calls == [1]
+
+
 def test_show_font_dialog_applies_chosen_font(qapp, monkeypatch):
     """Font family/size used to be picked via QComboBox/QFontComboBox
     widgets embedded directly in the context menu, which fought QMenu's
     own popup handling (clicking the size dropdown closed the whole menu
     instead of opening it) and needed manual re-styling to avoid clashing
-    with the theme. Replaced with a real QFontDialog instead."""
+    with the theme. Replaced with a real QFontDialog instead — built as a
+    bare instance rather than the static getFont(initial, self)
+    convenience (same palette-bleed fix as every other note dialog; see
+    _new_note_dialog's docstring), so tests patch exec()/currentFont() on
+    the instance instead of getFont() itself."""
     win = make_note_window("Hello World")
     select_all(win)
     chosen_font = QFont("Monospace", 24)
+    seen = {}
 
-    # PySide6's real return order is (ok, font) — confirmed by direct
-    # inspection of QFontDialog.getFont(), not assumed; get this backwards
-    # here and the test would pass while the app crashes for real.
-    monkeypatch.setattr(QFontDialog, "getFont", staticmethod(lambda initial, parent: (True, chosen_font)))
+    def fake_exec(self):
+        seen["parent"] = self.parent()
+        return QFontDialog.Accepted
+
+    monkeypatch.setattr(QFontDialog, "exec", fake_exec)
+    monkeypatch.setattr(QFontDialog, "currentFont", lambda self: chosen_font)
     win.show_font_dialog()
 
     assert win.body.fontFamily() == "Monospace"
     assert win.body.fontPointSize() == 24
+    assert seen["parent"] is None  # avoids the palette-bleed bug, see _new_note_dialog
 
 
 def test_show_font_dialog_cancelled_leaves_font_unchanged(qapp, monkeypatch):
@@ -498,7 +689,7 @@ def test_show_font_dialog_cancelled_leaves_font_unchanged(qapp, monkeypatch):
     before_family = win.body.fontFamily()
     before_size = win.body.fontPointSize()
 
-    monkeypatch.setattr(QFontDialog, "getFont", staticmethod(lambda initial, parent: (False, QFont())))
+    monkeypatch.setattr(QFontDialog, "exec", lambda self: QFontDialog.Rejected)
     win.show_font_dialog()
 
     assert win.body.fontFamily() == before_family
@@ -534,11 +725,16 @@ def test_qfontdialog_getfont_returns_ok_then_font(qapp):
 
 
 def _patch_title_dialog(monkeypatch, text, accepted):
-    """show_title_dialog() uses the static QInputDialog.getText() convenience
-    (matching MemoboardWindow.rename()'s pattern, unlike show_hyperlink_dialog's
-    instance-based approach) — so tests patch getText() directly rather than
-    exec()/textValue() on an instance."""
-    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: (text, accepted)))
+    """show_title_dialog() builds a QInputDialog instance directly (rather
+    than the static getText() convenience) so it can be resized wider than
+    the cramped default — same pattern as show_hyperlink_dialog's own fix
+    (see _patch_hyperlink_dialog above), and tests must patch exec()/
+    textValue() on the instance for the same reason: a real, un-mockable
+    modal dialog would otherwise hang the test."""
+    monkeypatch.setattr(
+        QInputDialog, "exec", lambda self: QInputDialog.Accepted if accepted else QInputDialog.Rejected
+    )
+    monkeypatch.setattr(QInputDialog, "textValue", lambda self: text)
 
 
 def test_title_bar_hidden_by_default(qapp):
@@ -561,6 +757,23 @@ def test_title_bar_label_has_explicit_black_text_color(qapp):
     assert "color: black" in win.title_bar.styleSheet()
 
 
+def test_title_bar_label_has_explicit_transparent_background(qapp):
+    """Regression: a board-attached note's title bar painted the whole
+    strip in the *board's* own background color instead of the note's —
+    reported live via a screenshot. Root cause: the label's own
+    backgroundRole() picks up the board canvas (a genuine QObject
+    ancestor once attached) once styled-painting is active anywhere in
+    the ancestor chain, and Qt paints that as the label's own implicit
+    background — #titlebar's own background-color rule doesn't prevent
+    that, since it's the label's own fill sitting on top of it. Only
+    reproducible for a note actually attached to a board (see
+    test_board_window.py for the full attached-note repro); this just
+    guards the stylesheet text itself, cheaply, without needing a real
+    board."""
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    assert "background-color: transparent" in win.title_bar.styleSheet()
+
+
 def test_title_bar_font_matches_body_font_family_and_size(qapp):
     """The title used to just bold the label's own ambient default font,
     unrelated to whatever font the note body actually uses — now matches
@@ -571,6 +784,41 @@ def test_title_bar_font_matches_body_font_family_and_size(qapp):
     assert title_font.family() == body_font.family()
     assert title_font.pointSize() == body_font.pointSize()
     assert title_font.bold()
+
+
+def test_new_note_dialog_has_no_parent_to_avoid_palette_bleed(qapp):
+    """Regression: QInputDialog(self) inherited a board-attached note's
+    resolved palette — the board canvas's own inline background-color
+    QSS (NotepadWindow._apply_color) cascades through the real widget
+    tree into the note (a genuine descendant) and then into any dialog
+    built with the note as its parent too, even though that dialog is a
+    separate top-level window. Reported live via a screenshot: Note
+    Title's dialog rendered with the board's own light grey background
+    instead of the app's normal dark theme, with the still-normal
+    dark-theme text nearly illegible on top of it. Confirmed directly: a
+    board-parented QInputDialog's backgroundRole() color read back the
+    board's own color instead of the theme default, and only ever
+    reproducible for a note actually attached to a board. Passing no
+    parent at all sidesteps the inheritance entirely (same fix already
+    used for the hyperlink hover tooltip's own palette bleed)."""
+    win = make_note_window("")
+    dialog = win._new_note_dialog("Title", "Label:", "")
+    assert dialog.parent() is None
+
+
+def test_center_dialog_over_note_centers_on_the_notes_own_geometry(qapp):
+    win = make_note_window("")
+    win.move(100, 100)
+    win.resize(220, 220)
+    dialog = win._new_note_dialog("Title", "Label:", "")
+    dialog.resize(300, 150)
+
+    win._center_dialog_over_note(dialog)
+
+    expected_center = win.mapToGlobal(win.rect().center())
+    actual_center = dialog.geometry().center()
+    assert abs(actual_center.x() - expected_center.x()) <= 1
+    assert abs(actual_center.y() - expected_center.y()) <= 1
 
 
 def test_show_title_dialog_sets_title_and_shows_bar(qapp, monkeypatch):
@@ -610,6 +858,29 @@ def test_show_title_dialog_strips_whitespace(qapp, monkeypatch):
     win.show_title_dialog()
 
     assert win.note.title == "Groceries"
+
+
+def test_show_title_dialog_is_wide_enough_to_read_its_own_title(qapp, monkeypatch):
+    """Regression: the static QInputDialog.getText() convenience's default
+    width was too narrow to even read the dialog's own title bar — same
+    class of bug reported live for NotepadWindow.rename()'s "Rename Notepad"
+    dialog (board_window.py) and already fixed there and for
+    show_hyperlink_dialog; Note Title had the identical issue. A first
+    fix (320) still truncated on an unscaled monitor even though it read
+    fine on a 125%-scaled one, since the OS-drawn title bar's own text
+    width isn't controlled by Qt's content sizing at all — bumped to 480."""
+    win = make_note_window("Some text")
+    seen = {}
+
+    def fake_exec(self):
+        seen["width"] = self.width()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+
+    win.show_title_dialog()
+
+    assert seen["width"] >= 480
 
 
 def test_note_actions_menu_shows_add_title_when_untitled(qapp):
@@ -771,6 +1042,59 @@ def test_context_menu_label_reads_hyperlink_outside_any_link(qapp):
     titles = [a.text() for a in menu.actions()]
     assert "Hyperlink…" in titles
     assert "Edit Hyperlink…" not in titles
+
+
+def test_right_click_directly_on_link_reads_edit_hyperlink_and_prefills_url(qapp, monkeypatch):
+    """Regression (test case 3.11): right-clicking a hyperlink is Qt's
+    default *context-menu* click, which — unlike a plain left-click —
+    leaves the caret wherever it last happened to be instead of moving it
+    to the click point (see _position_cursor_for_click). Reported live:
+    right-clicking straight onto a link with the caret sitting elsewhere
+    still showed "Hyperlink…" instead of "Edit Hyperlink…", and invoking
+    it opened the dialog with a blank "https://" instead of the link's
+    actual URL. The other Edit-Hyperlink tests above pre-position the
+    caret directly and so never exercised the real right-click path that
+    was actually broken."""
+    win = make_note_window("Read my stories and poems today")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextWord)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.EndOfWord, QTextCursor.KeepAnchor)  # "stories and poems"
+    link_start = cursor.selectionStart()
+
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    cursor.mergeCharFormat(fmt)
+
+    # Caret left somewhere else entirely, as if the user had last clicked
+    # or typed at the very start of the note — not on the link at all.
+    win.body.setTextCursor(_cursor_at(win, 0))
+
+    click_position = link_start + 2
+    monkeypatch.setattr(
+        win.body, "cursorForPosition", lambda pos: _cursor_at(win, click_position)
+    )
+    win.body._position_cursor_for_click(win.body.rect().center())
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    titles = [a.text() for a in menu.actions()]
+    assert "Edit Hyperlink…" in titles
+    assert "Hyperlink…" not in titles
+
+    seen = {}
+
+    def fake_exec(self):
+        seen["prefilled"] = self.textValue()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+    win.show_hyperlink_dialog()
+
+    assert seen["prefilled"] == "https://example.com"
 
 
 def test_anchor_span_finds_full_contiguous_link_text(qapp):
@@ -1048,6 +1372,36 @@ def test_insert_image_growth_capped_at_screen_available_size(qapp, monkeypatch, 
     assert win.height() <= available.height()
 
 
+def test_typing_after_backspacing_a_leading_image_keeps_default_format(qapp, monkeypatch, tmp_path):
+    """Regression: backspacing away a picture that had nothing before it
+    (e.g. the very first thing inserted into a note) left Qt's
+    current-char-format tracking pointing at its own unset/ambient
+    format — confirmed live, this is specific to a delete landing the
+    cursor at position 0, not to images or deletion in general. Text
+    typed right after read faded/grey instead of the note's actual
+    color, the same class of bug _apply_default_new_note_format already
+    guards against for a brand-new note."""
+    win = make_note_window("")
+    _patch_image_dialog(monkeypatch, _make_png(tmp_path))
+    win.show_insert_image_dialog()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+    assert win.body.toPlainText() == ""
+
+    win.body.textCursor().insertText("hello")
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.foreground().color().name() == win.manager.settings.default_font_color
+    assert fmt.fontPointSize() == win.manager.settings.default_font_size
+
+
 def _insert_test_image(win, width=10, height=10, color="blue"):
     image = QImage(width, height, QImage.Format_RGB32)
     image.fill(QColor(color))
@@ -1085,9 +1439,13 @@ def test_select_image_at_selects_image_from_position_after_it(qapp):
     assert sorted((cursor.selectionStart(), cursor.selectionEnd())) == [image_start, image_end]
 
 
-def test_select_image_at_leaves_plain_text_click_untouched(qapp):
+def test_select_image_at_moves_plain_text_click_without_selecting(qapp):
     """No image at the click point: a right-click on plain text shouldn't
-    manufacture a selection that wasn't there before."""
+    manufacture a selection that wasn't there before, but the caret does
+    move to the click position — regression guard for Edit Hyperlink and
+    friends reading stale cursor state left over from wherever the user
+    last clicked, instead of the actual right-click point (see
+    _position_cursor_for_click)."""
     win = make_note_window("plain text, no image")
     cursor = win.body.textCursor()
     cursor.movePosition(QTextCursor.Start)
@@ -1096,7 +1454,7 @@ def test_select_image_at_leaves_plain_text_click_untouched(qapp):
     win.body._select_image_at(3)
 
     assert win.body.textCursor().hasSelection() is False
-    assert win.body.textCursor().position() == 0
+    assert win.body.textCursor().position() == 3
 
 
 def test_select_image_at_leaves_existing_selection_when_click_inside_it(qapp):
@@ -1132,7 +1490,7 @@ def test_context_menu_selects_image_and_enables_delete(qapp, monkeypatch):
     win.body.setTextCursor(_cursor_at(win, image_start))  # plain cursor, no selection
 
     monkeypatch.setattr(win.body, "cursorForPosition", lambda pos: _cursor_at(win, image_start))
-    win.body._select_image_under_click(win.body.rect().center())
+    win.body._position_cursor_for_click(win.body.rect().center())
 
     assert win.body.textCursor().hasSelection()
     menu = win.body.createStandardContextMenu()
@@ -1247,6 +1605,52 @@ def test_toggle_rolled_collapses_and_expands(qapp):
     win.toggle_rolled()
     assert win.note.rolled_up is False
     assert not win.body.isHidden()
+
+
+def test_toggle_rolled_hides_and_restores_title_bar(qapp):
+    """Regression, reported live via a screenshot: rolling up a titled
+    note left title_bar visible while the whole window shrank to just
+    HEADER_HEIGHT — everything (header + title strip) got crammed into
+    that sliver instead, rendering as a garbled mess of squashed text.
+    title_bar must hide along with body/footer on roll, and only come
+    back on unroll if the note actually still has a title (matching
+    set_title()'s own rule, so an untitled note doesn't grow a blank
+    title strip back)."""
+    win = NoteWindow(Note(title="Groceries"), manager=FakeManager())
+    assert not win.title_bar.isHidden()
+
+    win.toggle_rolled()
+    assert win.title_bar.isHidden()
+
+    win.toggle_rolled()
+    assert not win.title_bar.isHidden()
+    assert win.title_bar.label.text() == "Groceries"
+
+
+def test_toggle_rolled_keeps_title_bar_hidden_for_untitled_note(qapp):
+    win = make_note_window("Some text")
+    assert win.title_bar.isHidden()
+
+    win.toggle_rolled()
+    win.toggle_rolled()
+
+    assert win.title_bar.isHidden()
+
+
+def test_toggle_rolled_hides_find_bar(qapp):
+    """find_bar is transient UI, not persisted note content — rolling up
+    while it's open must hide it (same crammed-into-a-sliver bug as
+    title_bar), and it shouldn't reopen itself on unroll either, same as
+    any other reason it might have been closed."""
+    win = make_note_window("Some text")
+    win.find_bar.open_bar()
+    assert not win.find_bar.isHidden()
+
+    win.toggle_rolled()
+    assert win.find_bar.isHidden()
+
+    win.toggle_rolled()
+    assert win.find_bar.isHidden()
 
 
 def test_set_rolled_true_collapses_note(qapp):
@@ -1652,37 +2056,57 @@ def test_note_actions_menu_shows_unstick_when_stuck(qapp, monkeypatch):
 
 
 def test_show_stick_window_dialog_no_windows_shows_message(qapp, monkeypatch):
+    """show_stick_window_dialog() builds a bare QMessageBox instance
+    (rather than the static information(self, ...) convenience) so it
+    doesn't inherit a board-attached note's own palette bleed — same fix
+    as every other note dialog; see _new_note_dialog's docstring. Tests
+    patch exec() on the instance instead of information()."""
     monkeypatch.setattr("take_note.note_window.list_windows", lambda: [])
     informed = {}
-    monkeypatch.setattr(
-        QMessageBox, "information", staticmethod(lambda *a, **k: informed.setdefault("called", True))
-    )
+
+    def fake_exec(self):
+        informed["called"] = True
+        informed["parent"] = self.parent()
+        return QMessageBox.Ok
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
     win = make_note_window("Some text")
 
     win.show_stick_window_dialog()
 
     assert informed.get("called") is True
+    assert informed.get("parent") is None
     assert win._stuck_window_id is None
 
 
 def test_show_stick_window_dialog_picks_selected_window(qapp, monkeypatch):
+    """show_stick_window_dialog() builds a bare QInputDialog combo-box
+    instance (rather than the static getItem(self, ...) convenience) for
+    the same palette-bleed reason — tests patch exec()/textValue() on the
+    instance instead of getItem()."""
     _patch_window_watcher(monkeypatch)
     monkeypatch.setattr(
         "take_note.note_window.list_windows", lambda: [(111, "Firefox"), (222, "Terminal")]
     )
-    monkeypatch.setattr(
-        QInputDialog, "getItem", staticmethod(lambda *a, **k: ("Terminal (0x%x)" % 222, True))
-    )
+    seen = {}
+
+    def fake_exec(self):
+        seen["parent"] = self.parent()
+        return QInputDialog.Accepted
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+    monkeypatch.setattr(QInputDialog, "textValue", lambda self: "Terminal (0x%x)" % 222)
     win = make_note_window("Some text")
 
     win.show_stick_window_dialog()
 
     assert win._stuck_window_id == 222
+    assert seen["parent"] is None
 
 
 def test_show_stick_window_dialog_cancelled_does_not_stick(qapp, monkeypatch):
     monkeypatch.setattr("take_note.note_window.list_windows", lambda: [(111, "Firefox")])
-    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("", False)))
+    monkeypatch.setattr(QInputDialog, "exec", lambda self: QInputDialog.Rejected)
     win = make_note_window("Some text")
 
     win.show_stick_window_dialog()

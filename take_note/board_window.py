@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .models import Board
-from .note_window import ICON_BUTTON_QSS, RADIUS, get_menu_qss, header_shade
+from .note_window import ICON_BUTTON_QSS, RADIUS, NoteWindow, get_menu_qss, header_shade
 
 HEADER_HEIGHT = 24
 
@@ -88,7 +88,21 @@ class BoardCanvas(QWidget):
     def grow_to_fit(self):
         needed = self.board_window.scroll.viewport().size()
         needed_w, needed_h = needed.width(), needed.height()
-        for child in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly):
+        # NoteWindow instances only, not every QWidget child of the canvas —
+        # contextMenuEvent() below creates `QMenu(self)`, parenting each
+        # right-click's popup to the canvas for the lifetime of the canvas
+        # (Qt never deletes it just because exec() returns and the local
+        # Python variable goes out of scope), so plain findChildren(QWidget)
+        # kept picking up every closed-but-never-deleted menu too. Its
+        # leftover geometry() is in *screen*-absolute coordinates (it's a
+        # top-level popup), not canvas-local ones, so treating it as note
+        # content permanently inflated the required size to wherever on the
+        # screen the user last right-clicked — confirmed live: reproduced by
+        # triggering the real context menu (not calling create_note()
+        # directly) and finding the closed QMenu still in
+        # canvas.findChildren(QWidget) afterward, geometry frozen at the
+        # click point regardless of any later resize.
+        for child in self.findChildren(NoteWindow, options=Qt.FindDirectChildrenOnly):
             geo = child.geometry()
             needed_w = max(needed_w, geo.right() + self.MARGIN)
             needed_h = max(needed_h, geo.bottom() + self.MARGIN)
@@ -100,16 +114,16 @@ class BoardCanvas(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_qss())
 
-        new_note_action = menu.addAction("New Note on this Board")
+        new_note_action = menu.addAction("New Note on this Notepad")
         new_note_action.triggered.connect(
             lambda: board_window.manager.create_note(board=board_window, pos=event.pos())
         )
 
-        rename_action = menu.addAction("Rename Board")
+        rename_action = menu.addAction("Rename Notepad")
         rename_action.triggered.connect(board_window.rename)
 
         menu.addSeparator()
-        delete_action = menu.addAction("Delete Board")
+        delete_action = menu.addAction("Delete Notepad")
         delete_action.triggered.connect(board_window.confirm_delete)
 
         menu.exec(event.globalPos())
@@ -176,8 +190,25 @@ class NotepadWindow(QWidget):
         self.canvas.setStyleSheet(f"background-color: {self.board.color};")
 
     def rename(self):
-        name, ok = QInputDialog.getText(self, "Rename Board", "Board name:", text=self.board.name)
-        if ok and name.strip():
+        # The static QInputDialog.getText() convenience defaults to a
+        # width too narrow to even read its own title bar comfortably —
+        # same fix as show_hyperlink_dialog() in note_window.py: build the
+        # dialog directly so it can be sized explicitly.
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Rename Notepad")
+        dialog.setLabelText("Notepad name:")
+        dialog.setTextValue(self.board.name)
+        # 320px still truncated the title bar itself on an unscaled
+        # (100%) monitor even though it read fine on a 125%-scaled one —
+        # the OS window-manager-drawn title bar's own text needs more
+        # width than the dialog's content does, and that requirement
+        # isn't affected by Qt's own DPI handling at all since KWin draws
+        # it, not Qt, not the dialog's own content.
+        dialog.resize(480, dialog.sizeHint().height())
+        if dialog.exec() != QInputDialog.Accepted:
+            return
+        name = dialog.textValue()
+        if name.strip():
             self.board.name = name.strip()
             self.header.name_label.setText(self.board.name)
             self.mark_changed()
@@ -185,7 +216,7 @@ class NotepadWindow(QWidget):
     def confirm_delete(self):
         reply = QMessageBox.question(
             self,
-            "Delete Board",
+            "Delete Notepad",
             "Delete this Notepad? Notes on it will be moved back to the desktop.",
             QMessageBox.Yes | QMessageBox.No,
         )
