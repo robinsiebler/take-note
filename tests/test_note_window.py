@@ -676,8 +676,27 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
         "Lock Note",
         "Stick to Window…",
         "Add to Notepad",
+        "Hide Note",
         "Delete Note",
     ]
+
+
+def test_hide_note_action_hides_the_window(qapp):
+    """Session-only, like the tray's bulk Show All/Hide All Notes — no
+    persisted field, just a plain widget hide(). The Notes Browser
+    already lists every note regardless of window visibility and its
+    double-click handler already calls show() first, so it doubles as
+    the "bring a hidden note back" mechanism with no changes needed
+    there."""
+    win = make_note_window("Some text")
+    win.show()
+    menu = QMenu()
+    win.populate_note_actions_menu(menu)
+    hide_action = next(a for a in menu.actions() if a.text() == "Hide Note")
+
+    hide_action.trigger()
+
+    assert win.isHidden()
 
 
 def test_opacity_action_checked_matches_note_opacity_at_construction(qapp):

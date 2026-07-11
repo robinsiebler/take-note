@@ -2082,6 +2082,17 @@ class NoteWindow(QWidget):
             )
 
         menu.addSeparator()
+        # Session-only, like the tray's bulk Show All/Hide All Notes — a
+        # hidden note reappears on the next launch rather than staying
+        # hidden unexpectedly. To bring one specific note back without
+        # reopening every note: the Notes Browser lists every note
+        # regardless of window visibility, and double-clicking a row
+        # already calls .show() before .raise_()/.activateWindow(), so
+        # it already works as the "bring it back" mechanism with no
+        # further changes needed there.
+        hide_action = menu.addAction("Hide Note")
+        hide_action.triggered.connect(self.hide)
+
         delete_action = menu.addAction("Delete Note")
         delete_action.triggered.connect(self.confirm_delete)
 
