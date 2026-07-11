@@ -809,6 +809,16 @@ class NoteWindow(QWidget):
         # (harmless, but breaks tests asserting a single call) before the
         # explicit empty-note check even runs.
         self.body.textChanged.connect(self._fix_ambient_char_format)
+        # Also on cursorPositionChanged, not just textChanged: reported
+        # live — type a line, press Enter several times, type on the new
+        # line, arrow up into one of the blank lines in between, then
+        # type there and the text comes out grey. Confirmed directly:
+        # landing the cursor on certain blank lines via arrow keys alone
+        # (no text change at all) already desyncs the ambient format to
+        # no-brush, but textChanged never fires for a pure cursor move —
+        # so the very first character typed there inherits the bad format
+        # before this method ever gets a chance to run and correct it.
+        self.body.cursorPositionChanged.connect(self._fix_ambient_char_format)
         self.set_locked(note.locked, persist=False)
         self.title_bar.set_title(note.title)
         self._apply_opacity()
