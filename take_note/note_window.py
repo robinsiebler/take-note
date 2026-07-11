@@ -700,6 +700,14 @@ class NoteWindow(QWidget):
 
     def __init__(self, note: Note, manager, parent_board=None):
         super().__init__(parent_board.canvas if parent_board is not None else None)
+        # Guards moveEvent/resizeEvent below: the resize()/move()/show()
+        # calls later in this constructor (restoring a loaded note's saved
+        # geometry, or the window manager finalizing placement) fire real
+        # Qt move/resize events even though nothing the user did actually
+        # changed — confirmed live via a real subprocess launch+quit with
+        # zero interaction: every note's modified_at bumped anyway, and
+        # NoteManager's on-quit save then persisted that bump to disk.
+        self._initializing = True
         self.note = note
         self.manager = manager
         # Not persisted (see set_stuck_to_window's docstring) — always
@@ -756,6 +764,11 @@ class NoteWindow(QWidget):
             self._set_rolled(True, persist=False)
         else:
             self.header.roll_btn.setText("▲")
+        # Real user-initiated moves/resizes from here on should still mark
+        # the note changed — only the construction-time ones above (and
+        # whatever the window manager does while show() is finalizing
+        # placement) are exempt.
+        self._initializing = False
 
     # -- UI construction -------------------------------------------------
 
@@ -1849,6 +1862,16 @@ class NoteWindow(QWidget):
         return self.note
 
     def mark_changed(self):
+        # Guarded, not just moveEvent/resizeEvent: setHtml(note.html) in
+        # __init__ (restoring a loaded note's saved content) also fires
+        # textChanged, which is connected to this same method — confirmed
+        # live via a real subprocess launch+quit with zero interaction,
+        # every note's modified_at bumped anyway, purely from loading.
+        # Nothing is connected to `changed` yet during construction either
+        # (NoteManager wires that up only after the constructor returns),
+        # so skipping the emit here loses nothing real.
+        if self._initializing:
+            return
         self.note.modified_at = _now_iso()
         self.changed.emit()
 
