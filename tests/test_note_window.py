@@ -1510,11 +1510,14 @@ def test_typing_after_backspacing_a_leading_image_keeps_default_format(qapp, mon
     """Regression: backspacing away a picture that had nothing before it
     (e.g. the very first thing inserted into a note) left Qt's
     current-char-format tracking pointing at its own unset/ambient
-    format — confirmed live, this is specific to a delete landing the
-    cursor at position 0, not to images or deletion in general. Text
-    typed right after read faded/grey instead of the note's actual
-    color, the same class of bug _apply_default_new_note_format already
-    guards against for a brand-new note."""
+    format — confirmed live. Text typed right after read faded/grey
+    instead of the note's actual color, the same class of bug
+    _apply_default_new_note_format already guards against for a
+    brand-new note. See also
+    test_typing_after_two_consecutive_enters_keeps_default_format below
+    for the same underlying bug reached a different way, mid-document
+    rather than at position 0 — _fix_ambient_char_format() (not
+    ..._at_start(), renamed once it started handling both) covers both."""
     win = make_note_window("")
     _patch_image_dialog(monkeypatch, _make_png(tmp_path))
     win.show_insert_image_dialog()
@@ -1534,6 +1537,52 @@ def test_typing_after_backspacing_a_leading_image_keeps_default_format(qapp, mon
     fmt = cursor.charFormat()
     assert fmt.foreground().color().name() == win.manager.settings.default_font_color
     assert fmt.fontPointSize() == win.manager.settings.default_font_size
+
+
+def test_typing_after_two_consecutive_enters_keeps_default_format(qapp):
+    """Regression, reported live: type a line, press Enter twice (leaving
+    a blank paragraph in between), type more — the new text read
+    faded/grey instead of black. Confirmed directly: the character
+    immediately before the cursor at that point already has the correct
+    (real, non-ambient) format, but Qt's own current-char-format tracking
+    — what newly typed text actually inherits — had desynced from it to
+    its own unset/no-brush ambient format regardless. One Enter alone
+    (no intervening empty paragraph) does not trigger this; confirmed
+    that specifically too. Same underlying bug class as
+    test_typing_after_backspacing_a_leading_image_keeps_default_format
+    above, reached a different way — _fix_ambient_char_format() covers
+    both since it no longer only checks cursor position 0."""
+    win = make_note_window("")
+    win.body.insertPlainText("First line")
+
+    for _ in range(2):
+        event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+        qapp.sendEvent(win.body, event)
+    win.body.insertPlainText("Second")
+
+    last_block = win.body.document().lastBlock()
+    cursor = QTextCursor(last_block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.foreground().color().name() == win.manager.settings.default_font_color
+
+
+def test_typing_after_a_single_enter_is_unaffected(qapp):
+    """Sanity check for the fix above: a single Enter (no intervening
+    empty paragraph) was never broken — confirms the fix doesn't
+    over-trigger and start rewriting formatting that was already fine."""
+    win = make_note_window("")
+    win.body.insertPlainText("First line")
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+    win.body.insertPlainText("Second")
+
+    last_block = win.body.document().lastBlock()
+    cursor = QTextCursor(last_block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.foreground().color().name() == win.manager.settings.default_font_color
 
 
 def _insert_test_image(win, width=10, height=10, color="blue"):

@@ -745,7 +745,7 @@ class NoteWindow(QWidget):
         # during setHtml() itself, double-applying the default format
         # (harmless, but breaks tests asserting a single call) before the
         # explicit empty-note check even runs.
-        self.body.textChanged.connect(self._fix_ambient_char_format_at_start)
+        self.body.textChanged.connect(self._fix_ambient_char_format)
         self.set_locked(note.locked, persist=False)
         self.title_bar.set_title(note.title)
         self._apply_opacity()
@@ -828,23 +828,44 @@ class NoteWindow(QWidget):
         fmt.setForeground(QColor(settings.default_font_color))
         self.body.mergeCurrentCharFormat(fmt)
 
-    def _fix_ambient_char_format_at_start(self):
-        """Deleting content back down to the very start of the document —
-        backspacing an inline picture that had nothing before it, or
-        clearing all text — can leave Qt's current-char-format tracking
-        pointing at its own unset/ambient format instead of picking up
-        real formatting from whatever remains, even though simply moving
-        the cursor to position 0 (no delete involved) inherits fine.
-        Confirmed live: it's specifically the no-brush foreground left
-        behind by a delete landing at position 0 that makes the next
-        typed character read faded/grey instead of the note's actual
-        color, matching the same class of bug _apply_default_new_note_format
-        already guards against for a brand-new note."""
+    def _fix_ambient_char_format(self):
+        """Qt's own current-char-format tracking (what newly typed text
+        inherits) can end up pointing at its own unset/no-brush ambient
+        format instead of picking up real formatting from nearby text —
+        confirmed live in two distinct situations: deleting content back
+        down to the very start of the document (backspacing an inline
+        picture that had nothing before it, or clearing all text), and
+        typing through 2+ consecutive Enters partway through a note (the
+        empty paragraph in between is enough to desync Qt's ambient
+        format from the real formatting already present, even though the
+        character immediately before the cursor — confirmed directly —
+        still carries the correct one). Both read as the next typed
+        character coming out faded/grey instead of the note's actual
+        color.
+
+        Originally this only fired at cursor position 0, which covered
+        the first case but not the second (a mid-document position).
+        Generalized: whenever the ambient format is no-brush, inherit
+        from the character immediately before the cursor if one exists
+        and is itself real (so a note with custom-colored text keeps
+        that color, rather than a formatting glitch elsewhere in the
+        note silently resetting it to the app's global default color);
+        only fall back to the configured default format when there's
+        truly nothing before the cursor to inherit from — a brand-new
+        empty note, or genuinely at position 0."""
         cursor = self.body.textCursor()
-        if cursor.position() != 0 or cursor.hasSelection():
+        if cursor.hasSelection():
             return
         if self.body.currentCharFormat().foreground().style() != Qt.NoBrush:
             return
+        if cursor.position() > 0:
+            probe = QTextCursor(self.body.document())
+            probe.setPosition(cursor.position())
+            probe.movePosition(QTextCursor.PreviousCharacter, QTextCursor.KeepAnchor)
+            prev_format = probe.charFormat()
+            if prev_format.foreground().style() != Qt.NoBrush:
+                self.body.mergeCurrentCharFormat(prev_format)
+                return
         self._apply_default_new_note_format()
 
     # -- formatting --------------------------------------------------------
