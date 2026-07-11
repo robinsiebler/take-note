@@ -40,6 +40,37 @@ def test_hide_all_notes_hides_every_note():
         note_window.hide.assert_called_once()
 
 
+def test_toggle_show_all_notes_hides_when_all_visible():
+    """Regression: a bulk toggle must converge every note to one
+    consistent end state, matching toggle_roll_all_notes's pattern —
+    replaces two always-visible tray items (Show All/Hide All Notes)
+    with one toggling item. toggle_show_all_notes delegates to the
+    existing show_all_notes/hide_all_notes (each already covered by its
+    own test above), so this only needs to check which one gets called —
+    it can't call the *real* show_all_notes/hide_all_notes through a bare
+    Mock `self`, since those are themselves mocked-away attributes here."""
+    manager = _fake_manager([False, False])
+    for note_window in manager.notes.values():
+        note_window.isVisible.return_value = True
+
+    NoteManager.toggle_show_all_notes(manager)
+
+    manager.hide_all_notes.assert_called_once()
+    manager.show_all_notes.assert_not_called()
+
+
+def test_toggle_show_all_notes_shows_when_any_hidden():
+    manager = _fake_manager([False, False])
+    visibilities = [True, False]
+    for note_window, visible in zip(manager.notes.values(), visibilities):
+        note_window.isVisible.return_value = visible
+
+    NoteManager.toggle_show_all_notes(manager)
+
+    manager.show_all_notes.assert_called_once()
+    manager.hide_all_notes.assert_not_called()
+
+
 def test_bring_all_notes_to_front_raises_every_note():
     manager = _fake_manager([False, False])
 

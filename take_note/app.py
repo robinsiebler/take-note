@@ -126,6 +126,16 @@ class NoteManager(QObject):
         for note_window in self.notes.values():
             note_window.hide()
 
+    def toggle_show_all_notes(self):
+        """Shows every note if any are currently hidden, otherwise hides
+        them all — one consistent end state for the whole batch, same
+        convergent-toggle pattern as toggle_roll_all_notes, so the tray
+        only needs one menu item instead of two always-visible ones."""
+        if any(not nw.isVisible() for nw in self.notes.values()):
+            self.show_all_notes()
+        else:
+            self.hide_all_notes()
+
     def bring_all_notes_to_front(self):
         for note_window in self.notes.values():
             note_window.raise_()
