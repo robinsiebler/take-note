@@ -1190,6 +1190,85 @@ def test_hyperlink_dialog_prefills_existing_url_for_editing(qapp, monkeypatch):
     assert seen["prefilled"] == "https://old-example.com"
 
 
+def test_remove_hyperlink_strips_anchor_from_caret_span(qapp):
+    """Regression: there was previously no way to remove a hyperlink once
+    inserted — clearing the URL field in the dialog just cancelled with
+    no effect. A caret with no selection expands to the link's whole
+    contiguous span first, same convenience as show_hyperlink_dialog()."""
+    win = make_note_window("Read my stories and poems today")
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.NextWord)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.NextWord, QTextCursor.KeepAnchor)
+    cursor.movePosition(QTextCursor.EndOfWord, QTextCursor.KeepAnchor)  # "stories and poems"
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    cursor.mergeCharFormat(fmt)
+    link_start = cursor.selectionStart()
+
+    caret = win.body.textCursor()
+    caret.setPosition(link_start + 2)
+    win.body.setTextCursor(caret)
+
+    win.remove_hyperlink()
+
+    check = win.body.textCursor()
+    check.setPosition(link_start)
+    check.setPosition(link_start + len("stories and poems"), QTextCursor.KeepAnchor)
+    result_fmt = check.charFormat()
+    assert not result_fmt.isAnchor()
+    assert result_fmt.anchorHref() == ""
+    assert not result_fmt.fontUnderline()
+    assert win.body.toPlainText() == "Read my stories and poems today"
+
+
+def test_remove_hyperlink_strips_anchor_from_selection(qapp):
+    win = make_note_window("Click here")
+    select_all(win)
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    win.body.textCursor().mergeCharFormat(fmt)
+    select_all(win)
+
+    win.remove_hyperlink()
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.Start)
+    assert not cursor.charFormat().isAnchor()
+
+
+def test_remove_hyperlink_does_nothing_when_not_on_a_link(qapp):
+    win = make_note_window("Just plain text")
+    win.body.textCursor().movePosition(QTextCursor.Start)
+
+    win.remove_hyperlink()
+
+    assert win.body.toPlainText() == "Just plain text"
+
+
+def test_context_menu_shows_remove_hyperlink_only_on_a_link(qapp):
+    win = make_note_window("Click here")
+    menu_without_link = QMenu()
+    win.populate_text_menu(menu_without_link)
+    assert not any(a.text() == "Remove Hyperlink" for a in menu_without_link.actions())
+
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    select_all(win)
+    win.body.textCursor().mergeCharFormat(fmt)
+    caret = win.body.textCursor()
+    caret.setPosition(2)
+    win.body.setTextCursor(caret)
+
+    menu_with_link = QMenu()
+    win.populate_text_menu(menu_with_link)
+    assert any(a.text() == "Remove Hyperlink" for a in menu_with_link.actions())
+
+
 def test_context_menu_label_reads_edit_hyperlink_inside_existing_link(qapp):
     """Regression: right-clicking with the caret inside an existing link
     (no new selection) always showed "Hyperlink…" — identical to the

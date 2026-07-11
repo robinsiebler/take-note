@@ -1102,6 +1102,40 @@ class NoteWindow(QWidget):
             cursor.insertText(url, fmt)
         self.mark_changed()
 
+    def remove_hyperlink(self):
+        """Strips the anchor entirely rather than just editing its URL —
+        clearing the URL field in the Hyperlink dialog only ever cancelled
+        (no way to actually remove a link once inserted, confirmed there
+        was no such action anywhere in this menu)."""
+        cursor = self.body.textCursor()
+        href = cursor.charFormat().anchorHref() if cursor.charFormat().isAnchor() else ""
+        if not href:
+            return
+
+        if not cursor.hasSelection():
+            # Same caret-convenience as show_hyperlink_dialog(): expand to
+            # the link's whole contiguous span rather than requiring the
+            # user to select it exactly first.
+            start, end = self._anchor_span(cursor.position(), href)
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
+
+        fmt = QTextCharFormat()
+        fmt.setAnchor(False)
+        fmt.setAnchorHref("")
+        # Resets to this app's own configured default text color/no
+        # underline rather than trying to recover whatever formatting
+        # existed before the link was created — nothing tracks that.
+        # Known tradeoff: if this text was also deliberately colored/
+        # underlined by the user themselves (independent of being a
+        # link), that styling is lost too — there's no way to tell the
+        # two apart without tracking pre-link formatting, which this app
+        # doesn't do anywhere today.
+        fmt.setForeground(QColor(self.manager.settings.default_font_color))
+        fmt.setFontUnderline(False)
+        cursor.mergeCharFormat(fmt)
+        self.mark_changed()
+
     def show_title_dialog(self):
         # The static QInputDialog.getText() convenience defaults to a
         # width too narrow to even read its own title bar comfortably —
@@ -1981,6 +2015,15 @@ class NoteWindow(QWidget):
         is_editing_link = not cursor.hasSelection() and cursor.charFormat().isAnchor()
         hyperlink_action = menu.addAction("Edit Hyperlink…" if is_editing_link else "Hyperlink…")
         hyperlink_action.triggered.connect(self.show_hyperlink_dialog)
+
+        # Only offered when the caret/selection is actually on a link —
+        # same anchor-detection read as existing_href in
+        # show_hyperlink_dialog(), not just the caret-only is_editing_link
+        # check above, so it also shows up for a selection that starts on
+        # linked text.
+        if cursor.charFormat().isAnchor():
+            remove_hyperlink_action = menu.addAction("Remove Hyperlink")
+            remove_hyperlink_action.triggered.connect(self.remove_hyperlink)
 
         menu.addAction(self.find_action)
 
