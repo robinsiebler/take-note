@@ -580,10 +580,19 @@ class NoteFindBar(QWidget):
         self.field.setFocus()
         if self.field.text():
             self._find_from_start()
+        # F3/Shift+F3 only fire while the find bar is actually open —
+        # matches how other in-note shortcuts are scoped (e.g. find_action
+        # itself is disabled for an empty note rather than firing into a
+        # no-op) — kept enabled/disabled here rather than always-on so the
+        # keys are free for whatever else while the bar is closed.
+        self.note_window.find_next_action.setEnabled(True)
+        self.note_window.find_previous_action.setEnabled(True)
 
     def close_bar(self):
         self.hide()
         self.note_window.body.setFocus()
+        self.note_window.find_next_action.setEnabled(False)
+        self.note_window.find_previous_action.setEnabled(False)
 
     def find_next(self):
         self._perform_find(backward=False)
@@ -875,6 +884,19 @@ class NoteWindow(QWidget):
         # state here (the body is still empty at this point in __init__;
         # _build_ui's textChanged connection keeps it in sync afterward).
         self.find_action.setEnabled(bool(self.body.toPlainText()))
+
+        # F3/Shift+F3 jump to the next/previous match — self.find_bar
+        # doesn't exist yet at this point in __init__ (built later in
+        # _build_ui), but that's fine since these are only evaluated when
+        # actually triggered. Start disabled; NoteFindBar.open_bar()/
+        # close_bar() enable/disable them so the shortcut only fires while
+        # the bar is actually open (see those methods' own comments).
+        self.find_next_action = make_action("Find Next", "F3", lambda: self.find_bar.find_next())
+        self.find_next_action.setEnabled(False)
+        self.find_previous_action = make_action(
+            "Find Previous", "Shift+F3", lambda: self.find_bar.find_previous()
+        )
+        self.find_previous_action.setEnabled(False)
 
         # Label is set dynamically each time the Hamburger menu opens (see
         # populate_note_actions_menu) — "Add Title…" vs "Edit Title…",
@@ -1743,7 +1765,7 @@ class NoteWindow(QWidget):
             # as it doesn't reopen itself after any other reason it might
             # have been hidden.
             self.title_bar.hide()
-            self.find_bar.hide()
+            self.find_bar.close_bar()
             self.setMinimumHeight(HEADER_HEIGHT)
             self.resize(self.width(), HEADER_HEIGHT)
         else:

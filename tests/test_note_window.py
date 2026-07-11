@@ -1905,6 +1905,53 @@ def test_find_selects_first_match_as_you_type(qapp):
     assert cursor.selectedText() == "beta"
 
 
+def test_find_next_previous_actions_disabled_until_bar_opens(qapp):
+    """Regression: F3/Shift+F3 must only fire while the find bar is
+    actually open, matching how other in-note shortcuts are scoped (e.g.
+    find_action itself is disabled for an empty note)."""
+    win = make_note_window("alpha beta alpha")
+
+    assert not win.find_next_action.isEnabled()
+    assert not win.find_previous_action.isEnabled()
+
+    win.find_bar.open_bar()
+
+    assert win.find_next_action.isEnabled()
+    assert win.find_previous_action.isEnabled()
+
+    win.find_bar.close_bar()
+
+    assert not win.find_next_action.isEnabled()
+    assert not win.find_previous_action.isEnabled()
+
+
+def test_find_next_action_triggers_find_next(qapp):
+    win = make_note_window("alpha beta alpha")
+    win.find_bar.open_bar()
+    win.find_bar.field.setText("alpha")
+    first_start = win.body.textCursor().selectionStart()
+
+    win.find_next_action.trigger()
+
+    cursor = win.body.textCursor()
+    assert cursor.selectedText() == "alpha"
+    assert cursor.selectionStart() > first_start
+
+
+def test_find_previous_action_triggers_find_previous(qapp):
+    win = make_note_window("alpha beta alpha")
+    win.find_bar.open_bar()
+    win.find_bar.field.setText("alpha")  # lands on the first match
+    win.find_bar.find_next()  # now on the second "alpha"
+    second_start = win.body.textCursor().selectionStart()
+
+    win.find_previous_action.trigger()
+
+    cursor = win.body.textCursor()
+    assert cursor.selectedText() == "alpha"
+    assert cursor.selectionStart() < second_start
+
+
 def test_find_next_advances_to_subsequent_match(qapp):
     win = make_note_window("alpha beta alpha")
     win.find_bar.field.setText("alpha")
