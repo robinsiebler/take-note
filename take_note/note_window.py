@@ -878,6 +878,15 @@ class NoteWindow(QWidget):
         self.strikethrough_action = make_action(
             "Strikethrough", "Ctrl+K", self._toggle_strikethrough
         )
+        # Checkable so the Font Style submenu can show which styles the
+        # current selection already has (same pattern as Bullets &
+        # Numbering's list_style_actions below) — actual formatting is
+        # still driven entirely by _toggle_bold()/etc. reading the real
+        # cursor state, not by this checked flag, so any drift from Qt's
+        # own auto-toggle-on-trigger behavior self-corrects the next time
+        # populate_text_menu() recomputes it from the cursor on open.
+        for action in (self.bold_action, self.italic_action, self.underline_action, self.strikethrough_action):
+            action.setCheckable(True)
 
         self.find_action = make_action("Find…", "Ctrl+F", self.toggle_find_bar)
         # Disabled until there's something to search — matches its initial
@@ -1930,6 +1939,15 @@ class NoteWindow(QWidget):
             font_action.triggered.connect(self.show_font_dialog)
 
             font_style_menu = menu.addMenu("Font Style")
+            # Reflect the current selection's actual formatting — same
+            # calls _toggle_bold()/_toggle_italic()/etc. already use to
+            # decide what to flip *to* — so the submenu shows which
+            # styles are already applied instead of giving no indication
+            # at all (same gap Bullets & Numbering already didn't have).
+            self.bold_action.setChecked(self.body.fontWeight() > QFont.Normal)
+            self.italic_action.setChecked(self.body.fontItalic())
+            self.underline_action.setChecked(self.body.fontUnderline())
+            self.strikethrough_action.setChecked(self.body.currentCharFormat().fontStrikeOut())
             font_style_menu.addAction(self.bold_action)
             font_style_menu.addAction(self.italic_action)
             font_style_menu.addAction(self.underline_action)

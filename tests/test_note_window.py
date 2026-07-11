@@ -608,6 +608,37 @@ def test_bullets_menu_checks_current_style(qapp):
     assert checked == ["1, 2, 3"]
 
 
+def test_font_style_actions_unchecked_for_plain_selection(qapp):
+    win = make_note_window("Just plain text")
+    select_all(win)
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert not win.bold_action.isChecked()
+    assert not win.italic_action.isChecked()
+    assert not win.underline_action.isChecked()
+    assert not win.strikethrough_action.isChecked()
+
+
+def test_font_style_actions_reflect_current_selection_formatting(qapp):
+    """Regression: the Font Style submenu previously gave no visual
+    indication of which styles the current selection already had, unlike
+    Bullets & Numbering which already checks its matching action."""
+    win = make_note_window("Bold italic text")
+    select_all(win)
+    win._toggle_bold()
+    win._toggle_italic()
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert win.bold_action.isChecked()
+    assert win.italic_action.isChecked()
+    assert not win.underline_action.isChecked()
+    assert not win.strikethrough_action.isChecked()
+
+
 def test_text_menu_excludes_whole_note_actions(qapp):
     """Regression: right-clicking selected text used to show whole-note
     actions (Change Color, Transparency, Always on Top, Notepad,
