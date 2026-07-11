@@ -2299,9 +2299,26 @@ def test_toggle_find_bar_shows_and_focuses_field(qapp):
 
 
 def test_find_bar_field_has_a_clear_button(qapp):
+    """Regression, reported live: the native clear button
+    (setClearButtonEnabled) draws a light icon, invisible against this
+    field's hard-coded white background (FIND_BAR_QSS) -- every other
+    text field in the app sits on the system's own, usually-dark palette
+    instead, which is why only this one field needed a manual fixed-dark
+    icon (see _dark_clear_icon). Only visible once there's text to
+    clear, matching the native button's own behavior; clicking it clears
+    the field."""
     win = make_note_window("Some text")
+    actions = win.find_bar.field.actions()
+    assert len(actions) == 1
+    clear_action = actions[0]
+    assert clear_action.isVisible() is False
 
-    assert win.find_bar.field.isClearButtonEnabled()
+    win.find_bar.field.setText("needle")
+    assert clear_action.isVisible() is True
+
+    clear_action.trigger()
+    assert win.find_bar.field.text() == ""
+    assert clear_action.isVisible() is False
 
 
 def test_find_selects_first_match_as_you_type(qapp):
