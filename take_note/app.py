@@ -41,9 +41,11 @@ class NoteManager(QObject):
         # last, so creating several in a row doesn't stack them exactly on
         # top of each other (confusing — no visible sign a new note even
         # appeared). Wraps back to 0 after a few steps rather than
-        # drifting the notes off-screen forever. Session-only, like the
-        # bulk show/hide actions — not worth persisting just to remember
-        # exactly where the cascade left off across a restart.
+        # drifting the notes off-screen forever. Not persisted to disk —
+        # load_from_disk() (below) reseeds it from the loaded note count
+        # instead, cheap enough to redo on every launch and avoids the
+        # very first post-relaunch note landing exactly on top of an old
+        # one sitting at the fixed (100, 100) default (confirmed live).
         self._new_note_cascade_offset = 0
 
         # Settings must be known before the hotkey listener is created, so
@@ -84,6 +86,21 @@ class NoteManager(QObject):
 
         if not notes and not boards:
             self.create_note()
+        else:
+            # Reported live: relaunching the app resets the cascade
+            # counter to 0, so the very first standalone note created
+            # after a relaunch lands at the exact same fixed (100, 100)
+            # default as the very first note of any session — landing
+            # right on top of whatever old note is already sitting there,
+            # reading as "not staggered" even though the mechanism itself
+            # works fine within a session. Seeding from how many
+            # standalone notes are already loaded means a relaunch
+            # continues roughly where the cascade left off instead of
+            # restarting from scratch.
+            standalone_count = sum(1 for note in notes if note.board_id is None)
+            self._new_note_cascade_offset = (standalone_count * CASCADE_OFFSET) % (
+                CASCADE_OFFSET * 10
+            )
 
     def _wire_note(self, note_window: NoteWindow):
         self.notes[note_window.note.id] = note_window
