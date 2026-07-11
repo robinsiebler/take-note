@@ -7,24 +7,41 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 - Colored sticky notes with rounded corners, rich text (a "Font…" action
   opens the native font-family/size/style dialog; plus quick bold/italic/
   underline/strikethrough, alignment, and bullets & numbering with
-  indent/dedent via a right-click menu), plus a "Font Color…" swatch
-  picker (including black) for selected text, always-on-top (toggleable
-  per note), adjustable transparency, freely movable and resizable,
-  collapsible to just the header ("roll up"), persisted across restarts.
+  indent/dedent via a right-click menu — Font Style and Bullets &
+  Numbering both show which style the current selection already has),
+  plus a "Font Color…" swatch picker (including black) for selected
+  text, always-on-top (toggleable per note), adjustable transparency,
+  freely movable and resizable, collapsible to just the header ("roll
+  up"), persisted across restarts. New notes stagger slightly instead of
+  stacking exactly on top of each other.
   Hyperlinks: "Hyperlink…" turns the selection (or a typed URL) into a
   clickable link, or edits an existing one in place (pre-filling its
   current URL) if invoked with just the caret inside it rather than a
   new selection — hover shows a hand cursor and tooltip, Ctrl+Click opens
-  it, a plain click still just places the cursor for editing.
+  it, a plain click still just places the cursor for editing. Plain-text
+  URLs also auto-detect as links the moment you right-click them, and
+  "Remove Hyperlink" strips a link back to plain text.
+- Spell check (optional, off by default — see below): a red squiggly
+  underline under misspelled words as you type, with suggested
+  corrections in the right-click menu.
 - Right-click the note body for text-formatting actions only; whole-note
-  actions (color, transparency, always-on-top, Notepad, delete) live in
-  the header's right-click menu and the hamburger (☰) button instead.
-- System tray icon: create notes/boards, open Settings, quit.
+  actions (color, transparency, always-on-top, Notepad, delete, hide)
+  live in the header's right-click menu and the hamburger (☰) button
+  instead.
+- System tray icon: create notes/boards, open the Notes Browser, open
+  Settings, quit.
 - Global hotkey (default `Ctrl+Alt+N`, user-configurable in Settings) to
   create a new note from anywhere.
-- Settings dialog (tray → Settings…): launch at login, default note color,
-  whether new notes start always-on-top, and a hotkey recorder that
-  live-tests a combo for conflicts before committing to it.
+- Notes Browser (tray → "Notes Browser…"): a sortable, searchable table
+  of every note (Title/Preview/Notepad/Date Modified columns) plus a
+  tree of boards to filter by, for finding a note (including a hidden
+  one) without hunting across the desktop.
+- Settings dialog (tray → Settings…): launch at login, default note
+  color/font size/color, whether new notes start always-on-top, optional
+  spell check, and a hotkey recorder that live-tests a combo for
+  conflicts before committing to it. Has Apply (try a setting without
+  closing the dialog) alongside OK/Cancel, and remembers its own window
+  position across restarts.
 - Notepads: group notes onto a shared corkboard-style window that shows,
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark
@@ -35,18 +52,23 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   grows in width and height to fit the picture rather than shrinking it,
   capped at the screen's available size.
 - In-note Find (Ctrl+F, or the context menu's "Find…" — disabled on an
-  empty note): a small non-modal find bar with Next/Previous and
-  wrap-around search.
+  empty note): a small non-modal find bar with Next/Previous
+  (F3/Shift+F3 also work while it's open) and wrap-around search. Find,
+  Title, and Hyperlink text fields all have a clear (×) button.
 - Lock Note (hamburger ☰ menu): makes the note read-only — the
   text-formatting context menu collapses to just Find…, and Ctrl+B/I/U/K
   stop working too, so a locked note can't be edited from the keyboard
   either.
 - Note title (hamburger ☰ menu's first item, or Shift+F2): shows as a bold
   line above the note body, only when set.
-- Tray menu bulk actions: Bring Notes on Top, Show All Notes, Hide All
-  Notes, and Roll Up/Down Notes (rolls every note up if any are expanded,
-  otherwise expands them all — one consistent end state for the whole
-  batch rather than flipping each note independently).
+- Tray menu bulk actions: Bring Notes on Top, Show/Hide All Notes
+  (collapses to one item, converging to all-shown or all-hidden), and
+  Roll Up/Down Notes (rolls every note up if any are expanded, otherwise
+  expands them all — one consistent end state for the whole batch rather
+  than flipping each note independently). A single note can also be
+  hidden on its own via the header/hamburger menu — session-only, same
+  as the bulk actions, and still listed (and reopenable) in the Notes
+  Browser while hidden.
 
 ## Setup
 
@@ -77,7 +99,7 @@ sudo apt install libenchant-2-2 hunspell-en-us
 ```
 
 If either half is missing, the checkbox in Settings is disabled with an
-explanatory tooltip rather than silently doing nothing.
+explanatory label rather than silently doing nothing.
 
 ## Known limitation: Wayland
 
@@ -112,33 +134,37 @@ Notes and boards are stored as a single JSON file at
 .venv/bin/pytest
 ```
 
-## Roadmap / explicitly out of scope for v1
+## Roadmap / explicitly out of scope
 
-**Planned (v3)**, sourced from reference screenshots in `Screenshots/` (untracked,
-not part of the repo). Bullets & numbering, note transparency, a font
-picker, hyperlinks, embedded images, in-note Find, Lock Note, Note title,
-and bulk tray actions are done (see Features above); remaining:
-- "Stick a note to a window" — hide/show a note synced with another
-  window's minimize/restore/close (whole-window granularity only;
-  browser-tab-level isn't feasible on Linux — no clean per-tab signal)
-- Set the default new-note font to 12pt, black (currently just inherits
-  whatever Qt's system default font/color resolves to, unset by us)
-- Settings dialog: add an option to configure that default font size/color
+Everything originally planned for v1-v3 (bullets & numbering, note
+transparency, a font picker, hyperlinks, embedded images, in-note Find,
+Lock Note, Note title, "Stick to Window", bulk tray actions, the Notes
+Browser, and a manual test plan under `test_cases/`) is done — see
+Features above rather than re-deriving it from history here.
 
-**Future / lower priority:**
-- Note list / search window ("Notes Browser")
-- Tags (only pays off once a Notes Browser/search exists to filter by them)
+**Still open, lower priority:**
+- Tags — only pays off once a way to filter by them exists (the Notes
+  Browser now does, so this is unblocked whenever it's picked up)
 - Reminders / alarms (needs a real notification/alarm subsystem)
-- Cloud sync
 - Interactive checklists inside notes (needs a custom `QTextObjectInterface`,
   unlike bullets/numbering above)
-- A more advanced note-color picker beyond the fixed swatch palette
-- Note "skins" / a Markdown editing mode
-- Spell check (would add a real dependency — hunspell/enchant)
+- Note-color/font-color picker popup: corners and border are already
+  rounded; the swatch layout/background styling itself is still an open
+  design question
+- Configurable hotkeys for in-app actions (Bold/Italic/Add Title etc.) —
+  currently only the one global "new note" hotkey is user-configurable
+- The Notepad corkboard window's own chrome is still visually plain
+  compared to note windows, has no tray listing of existing boards or
+  bulk reopen, and doesn't remember which boards were hidden across a
+  restart
 - Drag-and-drop of notes onto a Notepad (currently a right-click "Add to
   Notepad" menu action instead)
-- A manual test plan and test cases (structured checklist for exercising
-  the app by hand, distinct from the automated pytest suite)
+- Thumbnail + open-full-size for oversized embedded pictures
+- Tray menu separators render as plain gaps (KDE's native tray menu
+  protocol doesn't pick up the app's own stylesheet — no clean fix found)
+
+**Distant future, not scoped:** cloud sync, note "skins" / a Markdown
+editing mode.
 
 See [docs/PLAN.MD](docs/PLAN.MD) for the original pre-implementation design
 plan (historical reference; some details evolved during implementation).
