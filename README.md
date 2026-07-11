@@ -56,6 +56,29 @@ python3 -m venv .venv
 .venv/bin/take-note
 ```
 
+## Spell check (optional)
+
+Off by default. Enabling it (Settings → General → "Check spelling as you
+type") needs the optional `pyenchant` extra *and* a system spell-check
+library with a dictionary — `pip install` alone can't provide the latter,
+since Enchant is a C library, not a Python package. On Fedora/Nobara:
+
+```bash
+sudo dnf install enchant2 hunspell hunspell-en-US
+.venv/bin/pip install -e ".[spellcheck]"
+```
+
+On Debian/Ubuntu (package names believed correct, not independently
+verified — no `apt` available in this project's own dev/test environment):
+
+```bash
+sudo apt install libenchant-2-2 hunspell-en-us
+.venv/bin/pip install -e ".[spellcheck]"
+```
+
+If either half is missing, the checkbox in Settings is disabled with an
+explanatory tooltip rather than silently doing nothing.
+
 ## Known limitation: Wayland
 
 Wayland's core protocol doesn't let an app position its own top-level

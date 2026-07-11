@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from . import spellcheck
 from .list_markers import paint_list_markers
 from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
 from .widgets import build_color_swatch_grid
@@ -785,6 +786,11 @@ class NoteWindow(QWidget):
         # immune to Qt's own serialization boilerplate.
         if not self.body.toPlainText():
             self._apply_default_new_note_format()
+
+        self.spell_highlighter: spellcheck.SpellHighlighter | None = None
+        if self.manager.settings.spell_check_enabled and spellcheck.is_available():
+            self._attach_spell_highlighter()
+
         # Connected only after the initial load/default-format handling
         # above rather than in _build_ui — connecting earlier fires this
         # during setHtml() itself, double-applying the default format
@@ -877,6 +883,44 @@ class NoteWindow(QWidget):
         fmt.setFontPointSize(settings.default_font_size)
         fmt.setForeground(QColor(settings.default_font_color))
         self.body.mergeCurrentCharFormat(fmt)
+
+    def _attach_spell_highlighter(self):
+        """Constructing QSyntaxHighlighter on a document that already has
+        content (a note loaded from disk) schedules an initial highlight
+        pass on the *next event-loop iteration*, not synchronously —
+        confirmed directly. That deferred pass fires textChanged once,
+        which this window's own textChanged -> mark_changed() connection
+        (below, in _build_ui) would otherwise turn into a spurious
+        "modified" note and a scheduled disk save on every single launch
+        with spell-check on. Reordering source lines can't dodge this
+        either way — mark_changed is wired inside _build_ui(), which runs
+        before setHtml() ever loads real content to check, so there's no
+        point after real content exists that's also before that connect.
+        Forcing the pass synchronously via rehighlight() while the
+        document's signals are blocked sidesteps both problems: the
+        forced pass consumes the queued one (confirmed it doesn't double-
+        fire once unblocked), and blockSignals() suppresses the one-time
+        emission that pass would otherwise cause, without affecting the
+        highlighter's own formatting work (the squiggle is still applied
+        correctly despite the block, confirmed via a real test).
+
+        Idempotent (no-op if already attached) since NoteManager can call
+        this from _apply_settings() on every Apply click, and re-checks
+        availability defensively even though callers already gate on it,
+        in case the optional dependency vanished mid-session."""
+        if self.spell_highlighter is not None or not spellcheck.is_available():
+            return
+        document = self.body.document()
+        document.blockSignals(True)
+        self.spell_highlighter = spellcheck.SpellHighlighter(document)
+        self.spell_highlighter.rehighlight()
+        document.blockSignals(False)
+
+    def _detach_spell_highlighter(self):
+        if self.spell_highlighter is None:
+            return
+        self.spell_highlighter.setDocument(None)
+        self.spell_highlighter = None
 
     def _fix_ambient_char_format(self):
         """Qt's own current-char-format tracking (what newly typed text
@@ -979,12 +1023,24 @@ class NoteWindow(QWidget):
         # free in both this app's own shortcuts and KWin's global defaults.
         self.title_action = make_action("Add Title…", "Shift+F2", self.show_title_dialog)
 
+        # Checkable + exclusive (same pattern as list_style_group below)
+        # so the submenu shows which alignment the current paragraph
+        # already has — same gap Bold/Italic/Underline/Strikethrough had
+        # before getting this same treatment.
+        self.align_group = QActionGroup(self)
+        self.align_group.setExclusive(True)
         self.align_left_action = QAction("Left", self)
+        self.align_left_action.setCheckable(True)
         self.align_left_action.triggered.connect(lambda: self._set_alignment(Qt.AlignLeft))
+        self.align_group.addAction(self.align_left_action)
         self.align_center_action = QAction("Center", self)
+        self.align_center_action.setCheckable(True)
         self.align_center_action.triggered.connect(lambda: self._set_alignment(Qt.AlignCenter))
+        self.align_group.addAction(self.align_center_action)
         self.align_right_action = QAction("Right", self)
+        self.align_right_action.setCheckable(True)
         self.align_right_action.triggered.connect(lambda: self._set_alignment(Qt.AlignRight))
+        self.align_group.addAction(self.align_right_action)
 
         # (style-or-None, label) pairs backing the Bullets & Numbering
         # submenu. Kept as a table (not one-off actions) so populate_text_menu
@@ -2046,6 +2102,41 @@ class NoteWindow(QWidget):
         cursor = self.body.textCursor()
         return cursor.hasSelection() and cursor.charFormat().isImageFormat()
 
+    def _add_spelling_suggestions(self, menu: QMenu):
+        """Only shown when the right-click landed on an actually-misspelled
+        word — same "act on wherever the cursor was just repositioned to"
+        guarantee _auto_linkify_at_cursor already relies on, since
+        _position_cursor_for_click() already ran before this."""
+        cursor = self.body.textCursor()
+        if cursor.hasSelection() or cursor.charFormat().isAnchor():
+            return
+        block = cursor.block()
+        span = spellcheck._word_at(block.text(), cursor.positionInBlock())
+        if span is None:
+            return
+        start, end, word = span
+        if spellcheck.check(word):
+            return
+
+        suggestions = spellcheck.suggest(word)[: spellcheck.MAX_SUGGESTIONS]
+        if not suggestions:
+            no_suggestions_action = menu.addAction("(No suggestions)")
+            no_suggestions_action.setEnabled(False)
+        else:
+            for suggestion in suggestions:
+                action = menu.addAction(suggestion)
+                action.triggered.connect(
+                    lambda checked=False, s=suggestion, st=start, e=end, b=block: self._replace_word(b, st, e, s)
+                )
+        menu.addSeparator()
+
+    def _replace_word(self, block, start: int, end: int, replacement: str):
+        cursor = QTextCursor(block)
+        cursor.setPosition(block.position() + start)
+        cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
+        cursor.insertText(replacement)
+        self.mark_changed()
+
     def populate_text_menu(self, menu: QMenu):
         """Text-formatting actions (font style/color, bullets & numbering,
         indent). Used only by NoteBody's contextMenuEvent (right-click in
@@ -2071,6 +2162,9 @@ class NoteWindow(QWidget):
             menu.addAction(self.find_action)
             return
 
+        if self.spell_highlighter is not None:
+            self._add_spelling_suggestions(menu)
+
         is_image_selection = self._selection_is_image()
 
         if not is_image_selection:
@@ -2092,6 +2186,10 @@ class NoteWindow(QWidget):
             font_style_menu.addAction(self.underline_action)
             font_style_menu.addAction(self.strikethrough_action)
             font_style_menu.addSeparator()
+            current_alignment = self.body.alignment()
+            self.align_left_action.setChecked(current_alignment == Qt.AlignLeft)
+            self.align_center_action.setChecked(current_alignment == Qt.AlignCenter)
+            self.align_right_action.setChecked(current_alignment == Qt.AlignRight)
             font_style_menu.addAction(self.align_left_action)
             font_style_menu.addAction(self.align_center_action)
             font_style_menu.addAction(self.align_right_action)

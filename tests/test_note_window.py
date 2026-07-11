@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from take_note.models import Board, Note, Settings
+from take_note import spellcheck
 from take_note.note_window import NoteWindow, _detect_url_span, find_bar_tint
 
 
@@ -637,6 +638,42 @@ def test_font_style_actions_reflect_current_selection_formatting(qapp):
     assert win.italic_action.isChecked()
     assert not win.underline_action.isChecked()
     assert not win.strikethrough_action.isChecked()
+
+
+def test_alignment_actions_default_to_left_checked(qapp):
+    """Regression: alignment gave no checked-state indication at all,
+    same gap the Font Style styles (bold/italic/etc.) had before getting
+    this same treatment. Left is Qt's own default paragraph alignment."""
+    win = make_note_window("Just plain text")
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert win.align_left_action.isChecked()
+    assert not win.align_center_action.isChecked()
+    assert not win.align_right_action.isChecked()
+
+
+def test_alignment_actions_reflect_current_paragraph_alignment(qapp):
+    win = make_note_window("Centered text")
+    win._set_alignment(Qt.AlignCenter)
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert not win.align_left_action.isChecked()
+    assert win.align_center_action.isChecked()
+    assert not win.align_right_action.isChecked()
+
+
+def test_alignment_actions_are_mutually_exclusive(qapp):
+    win = make_note_window("Right-aligned text")
+    win._set_alignment(Qt.AlignRight)
+
+    win.align_left_action.trigger()
+
+    assert win.align_left_action.isChecked()
+    assert not win.align_right_action.isChecked()
 
 
 def test_text_menu_excludes_whole_note_actions(qapp):
@@ -2750,3 +2787,181 @@ def test_size_grip_hidden_for_note_constructed_already_attached(qapp):
     the live attach_to_board() transition."""
     win = NoteWindow(Note(board_id="board-1"), manager=FakeManager())
     assert not win.size_grip.isVisible()
+
+
+class _SpellCheckManager:
+    boards = {}
+
+    def __init__(self, spell_check_enabled=True):
+        self.settings = Settings(spell_check_enabled=spell_check_enabled)
+
+
+def test_attaching_spell_highlighter_to_existing_content_does_not_mark_note_changed(qapp, monkeypatch):
+    """The regression this feature's whole design is built around:
+    QSyntaxHighlighter's initial highlight pass on a document that
+    already has content is deferred to the next event-loop iteration, not
+    synchronous — confirmed directly. Naively attaching it would
+    spuriously fire textChanged -> mark_changed() (bumping modified_at
+    and scheduling a disk save) on every single note, on every launch,
+    with spell-check on. NoteWindow._attach_spell_highlighter() guards
+    against this via blockSignals()+rehighlight().
+
+    mark_changed() already fires some number of times during perfectly
+    normal construction regardless of spell-check (moveEvent/resizeEvent
+    from the initial resize()/move() calls in __init__ call it directly)
+    — confirmed directly, not assumed, by counting calls with spell-check
+    off first. So the real regression check is that spell-check-enabled
+    construction fires *exactly the same count* as spell-check-disabled
+    construction of an otherwise-identical note, not that the count is
+    zero outright."""
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+
+    class _CountingNoteWindow(NoteWindow):
+        def __init__(self, *args, **kwargs):
+            self.mark_changed_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def mark_changed(self):
+            self.mark_changed_calls += 1
+            super().mark_changed()
+
+    baseline = _CountingNoteWindow(
+        Note(html="<p>hello wrold</p>"), manager=_SpellCheckManager(spell_check_enabled=False)
+    )
+    qapp.processEvents()
+
+    win = _CountingNoteWindow(
+        Note(html="<p>hello wrold</p>"), manager=_SpellCheckManager(spell_check_enabled=True)
+    )
+    assert win.spell_highlighter is not None
+    assert win.mark_changed_calls == baseline.mark_changed_calls
+
+    qapp.processEvents()
+    assert win.mark_changed_calls == baseline.mark_changed_calls  # catches the deferred initial-highlight pass
+
+    win.body.insertPlainText("!")
+    assert win.mark_changed_calls > baseline.mark_changed_calls  # normal editing still works afterward
+
+
+def test_spell_highlighter_underlines_misspelled_words_only(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    qapp.processEvents()
+
+    assert win.spell_highlighter is not None
+    block = win.body.document().findBlockByNumber(0)
+    formats = block.layout().formats()
+    underlined = [(f.start, f.length) for f in formats]
+    assert (6, 5) in underlined  # "wrold"
+    assert not any(start in (0, 12) for start, _ in underlined)  # "hello"/"today" untouched
+
+
+def test_spell_highlighter_skips_hyperlinked_text(qapp, monkeypatch):
+    """Checking URL/hyperlink text as spelling errors would just be
+    constant false-positive noise."""
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: False)  # everything "misspelled"
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(), manager=manager)
+    cursor = win.body.textCursor()
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref("https://example.com")
+    cursor.insertText("linktext", fmt)
+    qapp.processEvents()
+
+    block = win.body.document().findBlockByNumber(0)
+    formats = block.layout().formats()
+    assert formats == []
+
+
+def test_spell_check_disabled_by_default(qapp):
+    win = make_note_window("Some text")
+    assert win.spell_highlighter is None
+
+
+def test_attach_spell_highlighter_is_idempotent(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    win = make_note_window("Some text")
+
+    win._attach_spell_highlighter()
+    first = win.spell_highlighter
+    win._attach_spell_highlighter()
+
+    assert win.spell_highlighter is first
+
+
+def test_detach_spell_highlighter_removes_it(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    win = make_note_window("Some text")
+    win._attach_spell_highlighter()
+
+    win._detach_spell_highlighter()
+
+    assert win.spell_highlighter is None
+
+
+def test_detach_spell_highlighter_is_a_no_op_when_never_attached(qapp):
+    win = make_note_window("Some text")
+    win._detach_spell_highlighter()  # must not raise
+    assert win.spell_highlighter is None
+
+
+def test_context_menu_offers_suggestions_for_misspelled_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: ["world", "word"])
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)  # inside "wrold"
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions()]
+    assert "world" in titles
+    assert "word" in titles
+
+
+def test_context_menu_omits_suggestions_for_correctly_spelled_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: True)
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello there</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(2)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    assert "(No suggestions)" not in [a.text() for a in menu.actions()]
+
+
+def test_clicking_a_suggestion_replaces_the_word_in_place(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: ["world"])
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    suggestion_action = next(a for a in menu.actions() if a.text() == "world")
+
+    suggestion_action.trigger()
+
+    assert win.body.toPlainText() == "hello world today"

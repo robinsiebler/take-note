@@ -127,6 +127,7 @@ class Settings:
     default_font_color: str = "#000000"
     launch_at_login: bool = False
     hotkey: str = DEFAULT_HOTKEY
+    spell_check_enabled: bool = False
 
     # None until the Notes Browser has actually been moved/resized once —
     # lets it fall back to NotesBrowserWindow's own built-in default

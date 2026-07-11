@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QToolButton
 
+from take_note import spellcheck
 from take_note.models import FONT_SWATCHES, Settings
 from take_note.settings_dialog import SettingsDialog
 
@@ -200,3 +201,62 @@ def test_test_hotkey_starts_a_real_test_for_a_different_combo(qapp, monkeypatch)
     assert dialog.hotkey_status.text() == "Testing…"
     assert len(started) == 1
     assert dialog._test_listener is not None
+
+
+def test_spell_check_checkbox_reflects_settings_when_available(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+
+    dialog = SettingsDialog(Settings(spell_check_enabled=True))
+
+    assert dialog.spell_check_check.isChecked()
+    assert dialog.spell_check_check.isEnabled()
+
+
+def test_spell_check_checkbox_disabled_and_unchecked_when_unavailable(qapp, monkeypatch):
+    """Force-unchecked (not just disabled) even if the persisted setting
+    was True from an earlier session where the dependency was available —
+    a checkbox that's both disabled and checked would misleadingly imply
+    the feature is currently active."""
+    monkeypatch.setattr(spellcheck, "is_available", lambda: False)
+
+    dialog = SettingsDialog(Settings(spell_check_enabled=True))
+
+    assert not dialog.spell_check_check.isChecked()
+    assert not dialog.spell_check_check.isEnabled()
+
+
+def test_spell_check_unavailable_explanation_is_visible_not_just_a_tooltip(qapp, monkeypatch):
+    """Regression, reported live: a tooltip alone was hard to trigger and
+    gave no hint one even existed. Explanation text must be a real,
+    always-visible label, not just something you'd have to hover to
+    discover."""
+    from PySide6.QtWidgets import QLabel
+
+    monkeypatch.setattr(spellcheck, "is_available", lambda: False)
+
+    dialog = SettingsDialog(Settings())
+
+    labels = [w for w in dialog.findChildren(QLabel) if "pyenchant" in w.text()]
+    assert len(labels) == 1
+    assert labels[0].isVisible() or not labels[0].isHidden()
+
+
+def test_no_explanation_label_when_spell_check_is_available(qapp, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+
+    dialog = SettingsDialog(Settings())
+
+    labels = [w for w in dialog.findChildren(QLabel) if "pyenchant" in w.text()]
+    assert labels == []
+
+
+def test_result_settings_reflects_spell_check_checkbox(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    dialog = SettingsDialog(Settings(spell_check_enabled=False))
+    dialog.spell_check_check.setChecked(True)
+
+    result = dialog.result_settings()
+
+    assert result.spell_check_enabled is True

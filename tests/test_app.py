@@ -215,3 +215,46 @@ def test_create_note_on_a_board_does_not_apply_the_cascade_offset(qapp):
 
     assert (note_window.note.x, note_window.note.y) == (20, 20)
     assert manager._new_note_cascade_offset == 24  # unchanged
+
+
+def _fake_manager_for_apply_settings(settings) -> Mock:
+    manager = Mock()
+    manager.settings = settings
+    manager.notes = {"1": Mock()}
+    return manager
+
+
+def test_apply_settings_attaches_spell_highlighter_when_turned_on(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(Settings(spell_check_enabled=False))
+    note_window = manager.notes["1"]
+
+    NoteManager._apply_settings(manager, Settings(spell_check_enabled=True))
+
+    note_window._attach_spell_highlighter.assert_called_once()
+    note_window._detach_spell_highlighter.assert_not_called()
+
+
+def test_apply_settings_detaches_spell_highlighter_when_turned_off(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(Settings(spell_check_enabled=True))
+    note_window = manager.notes["1"]
+
+    NoteManager._apply_settings(manager, Settings(spell_check_enabled=False))
+
+    note_window._detach_spell_highlighter.assert_called_once()
+    note_window._attach_spell_highlighter.assert_not_called()
+
+
+def test_apply_settings_leaves_highlighters_alone_when_unchanged(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(Settings(spell_check_enabled=True))
+    note_window = manager.notes["1"]
+
+    NoteManager._apply_settings(manager, Settings(spell_check_enabled=True))
+
+    note_window._attach_spell_highlighter.assert_not_called()
+    note_window._detach_spell_highlighter.assert_not_called()

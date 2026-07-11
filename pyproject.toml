@@ -12,6 +12,9 @@ dependencies = [
     "python-xlib",
 ]
 
+[project.optional-dependencies]
+spellcheck = ["pyenchant"]
+
 [project.scripts]
 take-note = "take_note.__main__:main"
 

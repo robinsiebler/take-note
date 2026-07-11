@@ -239,6 +239,7 @@ class NoteManager(QObject):
 
     def _apply_settings(self, new_settings: Settings):
         hotkey_changed = new_settings.hotkey != self.settings.hotkey
+        spell_check_changed = new_settings.spell_check_enabled != self.settings.spell_check_enabled
         self.settings = new_settings
 
         if new_settings.launch_at_login:
@@ -248,6 +249,13 @@ class NoteManager(QObject):
 
         if hotkey_changed:
             self._restart_hotkey_listener()
+
+        if spell_check_changed:
+            for note_window in self.notes.values():
+                if new_settings.spell_check_enabled:
+                    note_window._attach_spell_highlighter()
+                else:
+                    note_window._detach_spell_highlighter()
 
         self._schedule_save()
 

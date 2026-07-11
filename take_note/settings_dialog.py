@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import spellcheck
 from .hotkey import HotkeyListener, parse_shortcut
 from .models import FONT_SWATCHES, SWATCHES, Settings
 from .widgets import build_color_swatch_grid
@@ -116,6 +117,45 @@ class SettingsDialog(QDialog):
             )
         )
         form.addRow(self._font_color_grid_layout)
+
+        self.spell_check_check = QCheckBox("Check spelling as you type")
+        self.spell_check_check.setChecked(self._settings.spell_check_enabled)
+        form.addRow(self.spell_check_check)
+        if not spellcheck.is_available():
+            # Force-unchecked (not just disabled) so a stale True from a
+            # previous session where the dependency *was* available
+            # doesn't silently linger as an unreachable "on" state — the
+            # checkbox itself is the only place this gets toggled.
+            self.spell_check_check.setChecked(False)
+            self.spell_check_check.setEnabled(False)
+            # A tooltip alone isn't a reliable way to explain why a
+            # control is disabled — reported live: hard to trigger, and
+            # nothing hints one exists. Visible text under the checkbox
+            # instead, same explanation, always there to see.
+            unavailable_label = QLabel(
+                "Requires the optional 'pyenchant' package and a system "
+                "spell-check dictionary — see README."
+            )
+            unavailable_label.setWordWrap(True)
+            # This dialog has no custom stylesheet anywhere else — every
+            # other label just inherits the ambient system palette, which
+            # is exactly why the rest of it already adapts correctly to
+            # light/dark themes. A hardcoded color here would break that:
+            # a first attempt at a fixed dark-theme-tuned grey read fine
+            # against this app's own dark theme but was too light to read
+            # against a light one (confirmed via a live screenshot under
+            # each), and the reverse would happen with a light-tuned one.
+            # setEnabled(False) instead reuses Qt's own disabled-text
+            # palette role — the same mechanism already graying out the
+            # checkbox right above it — which resolves to an
+            # appropriately-contrasted grey under either theme
+            # automatically, no hardcoded value needed at all.
+            unavailable_label.setEnabled(False)
+            # Font size only here, deliberately no color property — a
+            # color set via stylesheet would override the palette-driven
+            # one setEnabled(False) just established above.
+            unavailable_label.setStyleSheet("font-size: 11px;")
+            form.addRow("", unavailable_label)
 
         return tab
 
@@ -241,6 +281,7 @@ class SettingsDialog(QDialog):
             default_font_color=self._pending_font_color,
             launch_at_login=self.launch_at_login_check.isChecked(),
             hotkey=self.hotkey_edit.keySequence().toString() or self._settings.hotkey,
+            spell_check_enabled=self.spell_check_check.isChecked(),
             # No UI for these (yet) — carry them through unchanged rather
             # than silently resetting them to their dataclass defaults,
             # which building a brand-new Settings() here would otherwise
