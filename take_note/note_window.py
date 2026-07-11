@@ -979,12 +979,24 @@ class NoteWindow(QWidget):
         # free in both this app's own shortcuts and KWin's global defaults.
         self.title_action = make_action("Add Title…", "Shift+F2", self.show_title_dialog)
 
+        # Checkable + exclusive (same pattern as list_style_group below)
+        # so the submenu shows which alignment the current paragraph
+        # already has — same gap Bold/Italic/Underline/Strikethrough had
+        # before getting this same treatment.
+        self.align_group = QActionGroup(self)
+        self.align_group.setExclusive(True)
         self.align_left_action = QAction("Left", self)
+        self.align_left_action.setCheckable(True)
         self.align_left_action.triggered.connect(lambda: self._set_alignment(Qt.AlignLeft))
+        self.align_group.addAction(self.align_left_action)
         self.align_center_action = QAction("Center", self)
+        self.align_center_action.setCheckable(True)
         self.align_center_action.triggered.connect(lambda: self._set_alignment(Qt.AlignCenter))
+        self.align_group.addAction(self.align_center_action)
         self.align_right_action = QAction("Right", self)
+        self.align_right_action.setCheckable(True)
         self.align_right_action.triggered.connect(lambda: self._set_alignment(Qt.AlignRight))
+        self.align_group.addAction(self.align_right_action)
 
         # (style-or-None, label) pairs backing the Bullets & Numbering
         # submenu. Kept as a table (not one-off actions) so populate_text_menu
@@ -2092,6 +2104,10 @@ class NoteWindow(QWidget):
             font_style_menu.addAction(self.underline_action)
             font_style_menu.addAction(self.strikethrough_action)
             font_style_menu.addSeparator()
+            current_alignment = self.body.alignment()
+            self.align_left_action.setChecked(current_alignment == Qt.AlignLeft)
+            self.align_center_action.setChecked(current_alignment == Qt.AlignCenter)
+            self.align_right_action.setChecked(current_alignment == Qt.AlignRight)
             font_style_menu.addAction(self.align_left_action)
             font_style_menu.addAction(self.align_center_action)
             font_style_menu.addAction(self.align_right_action)

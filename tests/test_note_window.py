@@ -639,6 +639,42 @@ def test_font_style_actions_reflect_current_selection_formatting(qapp):
     assert not win.strikethrough_action.isChecked()
 
 
+def test_alignment_actions_default_to_left_checked(qapp):
+    """Regression: alignment gave no checked-state indication at all,
+    same gap the Font Style styles (bold/italic/etc.) had before getting
+    this same treatment. Left is Qt's own default paragraph alignment."""
+    win = make_note_window("Just plain text")
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert win.align_left_action.isChecked()
+    assert not win.align_center_action.isChecked()
+    assert not win.align_right_action.isChecked()
+
+
+def test_alignment_actions_reflect_current_paragraph_alignment(qapp):
+    win = make_note_window("Centered text")
+    win._set_alignment(Qt.AlignCenter)
+    menu = QMenu()
+
+    win.populate_text_menu(menu)
+
+    assert not win.align_left_action.isChecked()
+    assert win.align_center_action.isChecked()
+    assert not win.align_right_action.isChecked()
+
+
+def test_alignment_actions_are_mutually_exclusive(qapp):
+    win = make_note_window("Right-aligned text")
+    win._set_alignment(Qt.AlignRight)
+
+    win.align_left_action.trigger()
+
+    assert win.align_left_action.isChecked()
+    assert not win.align_right_action.isChecked()
+
+
 def test_text_menu_excludes_whole_note_actions(qapp):
     """Regression: right-clicking selected text used to show whole-note
     actions (Change Color, Transparency, Always on Top, Notepad,
