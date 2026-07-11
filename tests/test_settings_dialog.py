@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QToolButton
 
 from take_note.models import FONT_SWATCHES, Settings
@@ -102,3 +103,43 @@ def test_result_settings_preserves_notes_browser_geometry(qapp):
     assert result.notes_browser_y == 60
     assert result.notes_browser_w == 800
     assert result.notes_browser_h == 500
+
+
+def test_test_hotkey_recognizes_unchanged_current_combo(qapp):
+    """Regression: testing the combo that's already this app's own live
+    global hotkey always "failed" — the app's real HotkeyListener (in
+    NoteManager, unaffected by this dialog being open) still holds that
+    exact X11 grab, so a second grab for the same combo always conflicts
+    with it. Reported live: clicking Test without changing the field
+    printed 4 "Hotkey combo unavailable for one modifier-lock variant"
+    warnings and showed "Already in use by another app" — technically
+    true but misleading, since the "other app" is this one. Now
+    recognized and skipped before ever starting a competing grab."""
+    settings = Settings(hotkey="Ctrl+Alt+N")
+    dialog = SettingsDialog(settings)
+    dialog.hotkey_edit.setKeySequence(QKeySequence("Ctrl+Alt+N"))
+
+    dialog._test_hotkey()
+
+    assert dialog.hotkey_status.text() == "This is already your current hotkey"
+    assert dialog._test_listener is None
+
+
+def test_test_hotkey_starts_a_real_test_for_a_different_combo(qapp, monkeypatch):
+    """Sanity check for the guard above: a genuinely different combo must
+    still go through the real test-listener path, not get swallowed by
+    the unchanged-combo shortcut."""
+    from take_note.hotkey import HotkeyListener
+
+    started = []
+    monkeypatch.setattr(HotkeyListener, "start", lambda self: started.append(self))
+
+    settings = Settings(hotkey="Ctrl+Alt+N")
+    dialog = SettingsDialog(settings)
+    dialog.hotkey_edit.setKeySequence(QKeySequence("Ctrl+Alt+M"))
+
+    dialog._test_hotkey()
+
+    assert dialog.hotkey_status.text() == "Testing…"
+    assert len(started) == 1
+    assert dialog._test_listener is not None

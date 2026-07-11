@@ -256,3 +256,37 @@ def test_new_note_with_board_selected_attaches_to_that_board(qapp):
     browser._create_note()
 
     manager.create_note.assert_called_once_with(board=work)
+
+
+def test_window_title_does_not_duplicate_app_name(qapp):
+    """Regression, found via a live screenshot (test case 8.8): the
+    window rendered as "Take Note! — Notes Browser — Take Note!" — the
+    OS/WM already appends " — Take Note!" automatically (same behavior
+    already confirmed for dialog titles), so this window's own hardcoded
+    "Take Note! —" prefix was a redundant duplicate. Every other window
+    in the app already just sets its own plain descriptive title."""
+    manager = _fake_manager()
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.windowTitle() == "Notes Browser"
+
+
+def test_preview_column_has_a_minimum_width(qapp):
+    """Regression, reproduced live: sorting by Date Modified and Notepad a
+    few times each, then sorting by Preview, clipped its header to
+    "review" (leading "P" cut off). Preview is a Stretch column next to
+    Title, which is Interactive (user-draggable) — without a floor, Title
+    could claim enough width to squeeze Preview below what its own header
+    text plus the sort-indicator arrow need to render.
+
+    Not a hardcoded pixel floor: an earlier fix hardcoded 90px, which
+    matched the offscreen test platform's narrower fallback font but
+    undershot the real desktop font (122px under real xcb/Noto Sans) —
+    this test would have stayed green while the app clipped live. Assert
+    against the header's own real requirement instead, which is exactly
+    what the fix itself now does."""
+    manager = _fake_manager()
+    browser = NotesBrowserWindow(manager)
+    header = browser.table.horizontalHeader()
+
+    assert header.minimumSectionSize() == header.sectionSizeHint(1)

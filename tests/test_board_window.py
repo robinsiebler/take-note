@@ -326,3 +326,46 @@ def test_note_title_bar_label_does_not_inherit_board_background(qapp):
 
     label_bg = note.title_bar.label.palette().color(note.title_bar.label.backgroundRole()).name()
     assert label_bg != board.board.color
+
+
+def test_header_new_note_button_creates_note_on_same_board(qapp):
+    """Regression, reported live: clicking a board-attached note's header
+    + button created a plain standalone note back on the desktop instead
+    of a sibling on the same board — the header wired its + button to
+    manager.create_note() with no board argument at all, regardless of
+    where the note doing the clicking actually lived."""
+    mgr = FakeManager()
+    board = NotepadWindow(Board(), mgr)
+    mgr.boards[board.board.id] = board
+    note = NoteWindow(Note(color="#80deea", board_id=board.board.id), mgr, parent_board=board)
+    note.show()
+
+    note.header.new_btn.click()
+
+    siblings = [w for w in board.canvas.findChildren(NoteWindow) if w is not note]
+    assert len(siblings) == 1
+    assert siblings[0].note.board_id == board.board.id
+
+
+def test_header_new_note_button_creates_standalone_note_for_unattached_note(qapp):
+    """Sanity check for the fix above: an ordinary desktop note's + button
+    must still create a plain standalone note, not get accidentally
+    attached to some board."""
+    mgr = FakeManager()
+    note = NoteWindow(Note(color="#80deea"), mgr)
+    note.show()
+
+    created = {}
+    original_create_note = FakeManager.create_note
+
+    def spy_create_note(self, board=None, pos=None):
+        created["board"] = board
+        return original_create_note(self, board=board, pos=pos)
+
+    FakeManager.create_note = spy_create_note
+    try:
+        note.header.new_btn.click()
+    finally:
+        FakeManager.create_note = original_create_note
+
+    assert created["board"] is None

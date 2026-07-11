@@ -94,6 +94,29 @@ def test_set_list_style_none_removes_list(qapp):
     assert block.textList() is None
 
 
+def test_set_list_style_none_over_nested_selection_resets_block_indent(qapp):
+    """Regression, reported live via a screenshot: selecting a multi-level
+    nested list and choosing "None" removed every bullet, but each line
+    stayed staggered at its old nesting depth as plain paragraph indent
+    instead of resetting flush — QTextList.remove() transfers the list's
+    old nesting indent onto the block's own blockFormat().indent() rather
+    than snapping it back to 0."""
+    win = make_note_window("Item 1\nItem 1 a\nItem 2")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDisc)
+    goto_block(win, 1)
+    win._increase_indent()
+
+    select_all(win)
+    win._set_list_style(None)
+
+    doc = win.body.document()
+    for i in range(3):
+        block = doc.findBlockByNumber(i)
+        assert block.textList() is None
+        assert block.blockFormat().indent() == 0
+
+
 def test_set_list_style_applies_across_multiblock_selection(qapp):
     """Regression: converting a multi-item list's style used to read only
     cursor.currentList() (a single position), silently skipping every list
@@ -196,6 +219,51 @@ def test_increase_indent_does_not_compound_block_indent_at_deeper_levels(qapp):
     assert alpha_block.blockFormat().indent() == 0
     assert beta_block.blockFormat().indent() == 0
     assert beta_block.textList().format().indent() == alpha_block.textList().format().indent() + 1
+
+
+def test_increase_indent_over_multiline_selection_preserves_relative_nesting(qapp):
+    """Regression, reported live via before/after screenshots: selecting a
+    7-item, 4-level nested list and hitting Increase Indent once
+    collapsed the entire thing into one flat, renumbered level instead of
+    shifting each line one level deeper relative to where it already was.
+    Root cause: _list_indent_step used to run createList() (in the "no
+    adjacent list to rejoin" branch) against the *selection cursor
+    itself*, and createList() on a cursor with an active multi-block
+    selection folds every touched block into one shared list regardless
+    of each one's own prior depth. Fixed by stepping each block
+    individually via its own collapsed cursor."""
+    win = make_note_window(
+        "Item 1\nItem 1 a\nItem 2\nItem 2 a\nItem 2 b\nItem 2 c\nItem 3"
+    )
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListUpperRoman)
+
+    # Build depths 0,1,0,1,2,3,0 one line at a time, matching how a real
+    # user would via Tab/Increase Indent on each line individually.
+    for block_index, times in [(1, 1), (3, 1), (4, 2), (5, 3)]:
+        goto_block(win, block_index)
+        for _ in range(times):
+            win._increase_indent()
+
+    doc = win.body.document()
+    before_indents = [doc.findBlockByNumber(i).textList().format().indent() for i in range(7)]
+    assert before_indents == [1, 2, 1, 2, 3, 4, 1]
+
+    select_all(win)
+    win._increase_indent()
+
+    after_indents = [doc.findBlockByNumber(i).textList().format().indent() for i in range(7)]
+    assert after_indents == [2, 3, 2, 3, 4, 5, 2]
+    # Every block's own separate block-indent must still stay 0 — only
+    # each list's own nesting indent should carry the extra depth.
+    assert all(doc.findBlockByNumber(i).blockFormat().indent() == 0 for i in range(7))
+    # Siblings that were in the same list before the shift (0/2/6, all
+    # originally at depth 1) must still share one list afterward, not
+    # fragment into separate ones.
+    list0 = doc.findBlockByNumber(0).textList()
+    list2 = doc.findBlockByNumber(2).textList()
+    list6 = doc.findBlockByNumber(6).textList()
+    assert list0 is list2 is list6
 
 
 def test_decrease_indent_below_top_level_removes_list(qapp):
