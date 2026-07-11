@@ -64,7 +64,15 @@ class NotesBrowserWindow(QWidget):
     def __init__(self, manager):
         super().__init__(None)
         self.manager = manager
-        self.setWindowTitle("Take Note! — Notes Browser")
+        # Not "Take Note! — Notes Browser" — every other window in this
+        # app (Settings, Stick to Window, Delete Note, ...) just sets its
+        # own plain descriptive title and lets the OS/WM append " — Take
+        # Note!" automatically (same behavior already confirmed for
+        # dialog titles when sizing them). This was the one outlier still
+        # including the app name itself, rendering as a visibly
+        # duplicated "Take Note! — Notes Browser — Take Note!" title bar
+        # — caught via a live screenshot from test case 8.8.
+        self.setWindowTitle("Notes Browser")
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -139,6 +147,11 @@ class NotesBrowserWindow(QWidget):
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Title", "Preview", "Notepad", "Date Modified"])
+        # Sorting must be enabled before sectionSizeHint() is read below —
+        # the hint only reserves room for the sort-indicator arrow once
+        # the header actually shows one, so computing it before this line
+        # silently undercounts by the arrow's width.
+        self.table.setSortingEnabled(True)
         # Title is Interactive (not Stretch) with a modest fixed starting
         # width — Preview is the column actually meant to distinguish
         # untitled notes, so it gets all the leftover space instead of
@@ -146,6 +159,21 @@ class NotesBrowserWindow(QWidget):
         # anything useful.
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.table.setColumnWidth(0, 140)
+        # Title being Interactive (user-draggable) meant dragging it wide
+        # enough could squeeze the Stretch'd Preview column below the
+        # width its own header text + sort-indicator arrow need to fit —
+        # reproduced live by sorting other columns a few times, then
+        # sorting by Preview: its header clipped to "review", the
+        # leading "P" cut clean off. Ask the header for what it actually
+        # needs (sectionSizeHint, which accounts for the real runtime
+        # font and the indicator arrow's reserved space) rather than a
+        # hardcoded guess — a prior fix hardcoded 90px, which happened to
+        # match the *offscreen* test platform's narrower fallback font
+        # but undershot the real desktop font (122px under real xcb/Noto
+        # Sans), so it clipped live despite tests passing.
+        self.table.horizontalHeader().setMinimumSectionSize(
+            self.table.horizontalHeader().sectionSizeHint(1)
+        )
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
@@ -153,7 +181,6 @@ class NotesBrowserWindow(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSortingEnabled(True)
         self.table.doubleClicked.connect(self._open_selected_note)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_table_context_menu)

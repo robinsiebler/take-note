@@ -284,12 +284,21 @@ class NoteHeader(QWidget):
         layout.setContentsMargins(4, 0, 4, 0)
         layout.setSpacing(2)
 
-        new_btn = QToolButton()
-        new_btn.setText("+")
-        new_btn.setAutoRaise(True)
-        new_btn.setToolTip("New note")
-        new_btn.clicked.connect(lambda: note_window.manager.create_note())
-        layout.addWidget(new_btn)
+        self.new_btn = QToolButton()
+        self.new_btn.setText("+")
+        self.new_btn.setAutoRaise(True)
+        self.new_btn.setToolTip("New note")
+        # A note attached to a board should spawn its new sibling on that
+        # same board, not back out on the desktop — reported live:
+        # clicking + on a board note created a plain standalone note
+        # instead. boards.get(None) is None for an unattached note, so
+        # this naturally covers both cases without an explicit branch.
+        self.new_btn.clicked.connect(
+            lambda: note_window.manager.create_note(
+                board=note_window.manager.boards.get(note_window.note.board_id)
+            )
+        )
+        layout.addWidget(self.new_btn)
 
         layout.addStretch()
 
@@ -1241,7 +1250,24 @@ class NoteWindow(QWidget):
         current_list = block.textList()
         if style is None:
             if current_list is not None:
+                # QTextList.remove() drops the block's list membership
+                # but leaves its own blockFormat().indent() at whatever
+                # the list's nesting indent used to be — Qt preserves the
+                # visual position by transferring that weight onto the
+                # block itself instead of snapping back to the margin.
+                # Reported live via a screenshot: selecting a multi-level
+                # nested list and choosing "None" removed every bullet,
+                # but each line stayed staggered at its old nesting
+                # depth as plain paragraph indent, looking like the
+                # reset silently half-failed. Nesting depth belongs to
+                # the list alone once one exists (see _list_indent_step);
+                # once the list is gone there's nothing left to justify
+                # a nonzero block indent either.
                 current_list.remove(block)
+                cursor = QTextCursor(block)
+                block_fmt = cursor.blockFormat()
+                block_fmt.setIndent(0)
+                cursor.mergeBlockFormat(block_fmt)
         elif current_list is not None:
             fmt = current_list.format()
             fmt.setStyle(style)
@@ -1291,26 +1317,58 @@ class NoteWindow(QWidget):
 
     def _list_indent_step(self, delta: int):
         cursor = self.body.textCursor()
-        current_list = cursor.currentList()
+        if not cursor.hasSelection():
+            self._indent_step_for_block(cursor.block(), delta)
+            self.mark_changed()
+            return
+
+        # A multi-line selection can span several distinct nesting depths
+        # (each depth is its own QTextList) — stepping it through the
+        # single-block path below via the *selection cursor itself*
+        # would run createList() (in the "no adjacent list to rejoin"
+        # branch) while that cursor still has the whole selection
+        # active, and createList() on a cursor with an active selection
+        # folds *every* block the selection touches into one shared
+        # list, discarding each line's own prior depth. Reported live:
+        # selecting a 7-item, 4-level nested list and hitting Increase
+        # Indent once collapsed the entire thing into one flat,
+        # renumbered level instead of shifting each line one level
+        # deeper relative to where it already was. Apply the exact same
+        # step to each block individually instead, via a fresh collapsed
+        # cursor per block, using that block's own current depth as the
+        # starting point — matches ordinary word-processor behavior
+        # (Tab on a multi-level selection shifts everything deeper by
+        # one level, preserving relative structure) and naturally still
+        # rejoins newly-adjacent siblings into one shared list via
+        # _find_adjacent_list, same as the single-line case already did.
+        doc = self.body.document()
+        start = min(cursor.selectionStart(), cursor.selectionEnd())
+        end = max(cursor.selectionStart(), cursor.selectionEnd())
+        block = doc.findBlock(start)
+        while block.isValid() and block.position() < end:
+            self._indent_step_for_block(block, delta)
+            block = block.next()
+        self.mark_changed()
+
+    def _indent_step_for_block(self, block, delta: int):
+        cursor = QTextCursor(block)
+        current_list = block.textList()
         if current_list is None:
             # Not in a list: a plain visual block indent (works for any
             # paragraph, not just list items).
             block_fmt = cursor.blockFormat()
             block_fmt.setIndent(max(0, block_fmt.indent() + delta))
             cursor.mergeBlockFormat(block_fmt)
-            self.mark_changed()
             return
 
         style = current_list.format().style()
         new_indent = current_list.format().indent() + delta
-        block = cursor.block()
 
         if new_indent < 1:
             current_list.remove(block)
             block_fmt = cursor.blockFormat()
             block_fmt.setIndent(0)
             cursor.mergeBlockFormat(block_fmt)
-            self.mark_changed()
             return
 
         target_list = self._find_adjacent_list(block, new_indent)
@@ -1340,7 +1398,6 @@ class NoteWindow(QWidget):
         block_fmt = cursor.blockFormat()
         block_fmt.setIndent(0)
         cursor.mergeBlockFormat(block_fmt)
-        self.mark_changed()
 
     def _increase_indent(self):
         self._list_indent_step(1)

@@ -157,6 +157,21 @@ class SettingsDialog(QDialog):
             self.hotkey_status.setText("Invalid combination")
             return
 
+        # Testing the combo that's already this app's own live global
+        # hotkey would always "fail" — the app's real HotkeyListener (in
+        # NoteManager, unaffected by this dialog being open) still holds
+        # that exact grab, so a second grab for the same combo always
+        # conflicts with it. Reported live: clicking Test without
+        # changing the field printed 4 "Hotkey combo unavailable for one
+        # modifier-lock variant" warnings and showed "Already in use by
+        # another app" — technically true but misleading, since the
+        # "other app" is this one. Skip the redundant self-conflicting
+        # grab entirely rather than let it report a false conflict.
+        if (key, modifiers) == parse_shortcut(self._settings.hotkey):
+            self.hotkey_status.setText("This is already your current hotkey")
+            self._stop_test_listener()
+            return
+
         self.hotkey_status.setText("Testing…")
         self._stop_test_listener()
         self._test_listener = HotkeyListener(key, modifiers)
