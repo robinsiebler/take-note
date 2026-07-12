@@ -105,6 +105,12 @@ class BoardCanvas(QWidget):
         # canvas.findChildren(QWidget) afterward, geometry frozen at the
         # click point regardless of any later resize.
         for child in self.findChildren(NoteWindow, options=Qt.FindDirectChildrenOnly):
+            # A hidden note (Hide Note, or trashed — see
+            # NoteManager.trash_note) shouldn't hold the canvas open at
+            # its old size; it stays a real child widget the whole time,
+            # just not shown, so it'd otherwise still count here.
+            if not child.isVisible():
+                continue
             geo = child.geometry()
             needed_w = max(needed_w, geo.right() + self.MARGIN)
             needed_h = max(needed_h, geo.bottom() + self.MARGIN)

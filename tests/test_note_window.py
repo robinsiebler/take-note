@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import Mock
+
 import pytest
 from PySide6.QtCore import QEvent, QObject, QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import (
@@ -715,7 +717,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
         "Stick to Window…",
         "Add to Notepad",
         "Hide Note",
-        "Delete Note",
+        "Move to Trash",
     ]
 
 
@@ -735,6 +737,30 @@ def test_hide_note_action_hides_the_window(qapp):
     hide_action.trigger()
 
     assert win.isHidden()
+
+
+def test_note_with_deleted_at_constructs_hidden(qapp):
+    win = NoteWindow(Note(deleted_at="2026-01-01T00:00:00+00:00"), manager=FakeManager())
+
+    assert win.isHidden()
+
+
+def test_note_without_deleted_at_constructs_visible(qapp):
+    win = NoteWindow(Note(), manager=FakeManager())
+
+    assert not win.isHidden()
+
+
+def test_confirm_delete_moves_note_to_trash_not_permanent_delete(qapp, monkeypatch):
+    win = make_note_window()
+    win.manager.trash_note = Mock()
+    win.manager.delete_note = Mock()
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.Yes)
+
+    win.confirm_delete()
+
+    win.manager.trash_note.assert_called_once_with(win)
+    win.manager.delete_note.assert_not_called()
 
 
 def test_opacity_action_checked_matches_note_opacity_at_construction(qapp):

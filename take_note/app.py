@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, QPoint, QTimer, Signal
 from PySide6.QtWidgets import QApplication
@@ -16,6 +17,10 @@ from .settings_dialog import SettingsDialog
 from .tray import TrayIcon
 
 logger = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 SAVE_DEBOUNCE_MS = 800
 CASCADE_OFFSET = 24
@@ -148,6 +153,24 @@ class NoteManager(QObject):
         self.notes.pop(note_window.note.id, None)
         note_window.setParent(None)
         note_window.deleteLater()
+        self._schedule_save()
+
+    def trash_note(self, note_window: NoteWindow):
+        """Soft delete — the note stays in self.notes/notes.json (so
+        Restore and the Notes Browser's Trash view both work without a
+        separate data path) but hidden, same mechanism as the existing
+        session-only "Hide Note" except deleted_at makes it persist
+        across restarts. Deliberately doesn't touch board_id, unlike
+        permanent delete_note() (which doesn't need to, since the whole
+        Note is gone either way) — see Note.deleted_at's own docstring
+        for why that's what makes Restore board-aware."""
+        note_window.note.deleted_at = _now_iso()
+        note_window.hide()
+        self._schedule_save()
+
+    def restore_note(self, note_window: NoteWindow):
+        note_window.note.deleted_at = None
+        note_window.show()
         self._schedule_save()
 
     # -- bulk note actions (tray menu) ------------------------------------

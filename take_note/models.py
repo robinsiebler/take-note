@@ -89,6 +89,11 @@ class Note:
     tags: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now_iso)
     modified_at: str = field(default_factory=_now_iso)
+    # None means "not in Trash". Deliberately left independent of
+    # board_id — trashing a note never touches board_id, so a restored
+    # note goes right back to whichever board it came from (or stays
+    # unfiled if it never had one). Set only via NoteManager.trash_note().
+    deleted_at: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
