@@ -33,6 +33,55 @@ def test_degrades_gracefully_when_enchant_unavailable(monkeypatch):
     assert spellcheck.is_available() is False
     assert spellcheck.check("thisisdefinitelymisspelled") is True  # fails open
     assert spellcheck.suggest("helllo") == []
+    spellcheck.ignore("whatever")  # must not raise
+    spellcheck.add_to_dictionary("whatever")  # must not raise
+
+
+class _FakeDict:
+    """A tiny in-memory stand-in for enchant.Dict — real Dict.add()
+    persists to the user's actual personal word list on disk, which a
+    test must never touch (same "verify in isolation, never against the
+    real environment" lesson as pip install docs). This is enough to
+    prove ignore()/add_to_dictionary() are wired to the right Dict
+    methods without ever calling into real Enchant."""
+
+    def __init__(self):
+        self.session_words: set[str] = set()
+        self.added_words: set[str] = set()
+
+    def check(self, word):
+        return word in self.session_words or word in self.added_words
+
+    def suggest(self, word):
+        return []
+
+    def add_to_session(self, word):
+        self.session_words.add(word)
+
+    def add(self, word):
+        self.added_words.add(word)
+
+
+def test_ignore_makes_check_pass_for_that_word(monkeypatch):
+    fake = _FakeDict()
+    monkeypatch.setattr(spellcheck, "_dict", fake)
+    monkeypatch.setattr(spellcheck, "_dict_checked", True)
+
+    assert spellcheck.check("wrold") is False
+    spellcheck.ignore("wrold")
+    assert spellcheck.check("wrold") is True
+    assert fake.session_words == {"wrold"}
+
+
+def test_add_to_dictionary_makes_check_pass_for_that_word(monkeypatch):
+    fake = _FakeDict()
+    monkeypatch.setattr(spellcheck, "_dict", fake)
+    monkeypatch.setattr(spellcheck, "_dict_checked", True)
+
+    assert spellcheck.check("wrold") is False
+    spellcheck.add_to_dictionary("wrold")
+    assert spellcheck.check("wrold") is True
+    assert fake.added_words == {"wrold"}
 
 
 def test_check_and_suggest_handle_empty_string(monkeypatch):

@@ -67,6 +67,23 @@ def suggest(word: str) -> list[str]:
     return d.suggest(word)
 
 
+def ignore(word: str) -> None:
+    """Session-only: check() treats `word` as correctly spelled for the
+    rest of this process's lifetime, forgotten on the next launch."""
+    d = _get_dict()
+    if d is not None and word:
+        d.add_to_session(word)
+
+
+def add_to_dictionary(word: str) -> None:
+    """Permanent: Enchant itself persists `word` to the user's personal
+    word list, so check() treats it as correct across restarts too, not
+    just this session."""
+    d = _get_dict()
+    if d is not None and word:
+        d.add(word)
+
+
 def _word_at(text: str, offset: int) -> tuple[int, int, str] | None:
     """The [start, end) span and text of the word in `text` containing
     character position `offset`, or None. Pure function, no Qt dependency
