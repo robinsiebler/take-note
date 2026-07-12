@@ -134,6 +134,31 @@ def test_restores_saved_dialog_geometry(qapp):
     assert dialog.pos().y() == 60
 
 
+def test_saved_geometry_smaller_than_content_grows_on_show(qapp):
+    """Regression, reported live: a saved size from before a later
+    content change (the spell-check-unavailable label growing) was
+    smaller than what the dialog now actually needs -- restored
+    verbatim and left clipping content at the bottom, same failure mode
+    as having no saved size at all, just never re-checked against
+    current content."""
+    dialog = SettingsDialog(Settings(settings_dialog_w=10, settings_dialog_h=10))
+    needed = dialog.sizeHint()
+
+    dialog.show()
+
+    assert dialog.size().width() >= needed.width()
+    assert dialog.size().height() >= needed.height()
+
+
+def test_saved_geometry_larger_than_content_is_not_shrunk(qapp):
+    dialog = SettingsDialog(Settings(settings_dialog_w=1200, settings_dialog_h=1000))
+
+    dialog.show()
+
+    assert dialog.size().width() == 1200
+    assert dialog.size().height() == 1000
+
+
 def test_resizing_persists_geometry_into_the_same_settings_object(qapp):
     """settings passed into the dialog is the same object NoteManager
     holds, not a copy — moveEvent/resizeEvent write directly into it so
