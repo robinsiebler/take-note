@@ -26,14 +26,14 @@
   actions (color, transparency, always-on-top, Notepad, delete, hide)
   live in the header's right-click menu and the hamburger (☰) button
   instead.
-- System tray icon: create notes/boards, open the Notes Browser, open
+- System tray icon: create notes/boards, open the Notes Manager, open
   Settings, quit.
 - Five global hotkeys, all user-configurable in Settings: create a new
-  note (default `Meta+Alt+N`), open the Notes Browser (default
+  note (default `Meta+Alt+N`), open the Notes Manager (default
   `Meta+Alt+B`), and — with no default combo, opt-in only — show/hide
   all notes, roll up/down all notes, and bring all notes to front,
   mirroring the tray menu's own bulk actions below.
-- Notes Browser (tray → "Notes Browser…", or its own global hotkey
+- Notes Manager (tray → "Notes Manager…", or its own global hotkey
   above): a sortable, searchable table of every note (Title/Preview/
   Notepad/Date Modified/Tags columns) plus a tree of boards, tags, and
   Trash to filter by, for finding a note (including a hidden one)
@@ -53,7 +53,7 @@
   irreversible deletion is no longer reachable anywhere else.
 - Tags: free-form, per-note tags (no predefined list) assigned via the
   hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
-  Notes Browser, plus a small ribbon icon in the note's own header
+  Notes Manager, plus a small ribbon icon in the note's own header
   (next to the lock icon) whenever it has at least one tag — hover it
   for the full tag list, click it to open the Tags… dialog directly.
 - Settings dialog (tray → Settings…): launch at login, default note
@@ -95,5 +95,5 @@
   all — one consistent end state for the whole batch rather than
   flipping each note independently). A single note can also be hidden
   on its own via the header/hamburger menu — session-only, same as the
-  bulk actions, and still listed (and reopenable) in the Notes Browser
+  bulk actions, and still listed (and reopenable) in the Notes Manager
   while hidden.

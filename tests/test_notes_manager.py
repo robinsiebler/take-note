@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
 from take_note.models import Board, Note, Settings
-from take_note.notes_browser import ALL_NOTES, UNFILED, NotesBrowserWindow, _format_modified
+from take_note.notes_manager import ALL_NOTES, UNFILED, NotesManagerWindow, _format_modified
 
 
 def _note_window(body_text: str = "", **kwargs) -> Mock:
@@ -31,11 +31,11 @@ def _fake_manager(notes=None, boards=None, settings=None) -> Mock:
     return manager
 
 
-def _tree_labels(browser: NotesBrowserWindow) -> list[str]:
+def _tree_labels(browser: NotesManagerWindow) -> list[str]:
     return [browser.tree.topLevelItem(i).text(0) for i in range(browser.tree.topLevelItemCount())]
 
 
-def test_notes_browser_skips_the_taskbar(qapp, monkeypatch):
+def test_notes_manager_skips_the_taskbar(qapp, monkeypatch):
     """The one Take Note! window that used to be visible in the taskbar —
     notes/boards already skip it — which is what a real KDE Task Manager
     bug (confirmed unrelated to this app, filed upstream) mislabeled with
@@ -43,10 +43,10 @@ def test_notes_browser_skips_the_taskbar(qapp, monkeypatch):
     no remaining need for taskbar/Alt-Tab reachability."""
     calls = []
     monkeypatch.setattr(
-        "take_note.notes_browser.set_skip_taskbar", lambda win_id, enabled: calls.append((win_id, enabled))
+        "take_note.notes_manager.set_skip_taskbar", lambda win_id, enabled: calls.append((win_id, enabled))
     )
 
-    NotesBrowserWindow(_fake_manager())
+    NotesManagerWindow(_fake_manager())
 
     assert calls == [(calls[0][0], True)]
 
@@ -78,7 +78,7 @@ def test_tree_has_all_notes_and_unfiled_plus_one_item_per_board(qapp):
     personal = _board_window(name="Personal")
     manager = _fake_manager(boards={work.board.id: work, personal.board.id: personal})
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert _tree_labels(browser) == ["All Notes", "Unfiled", "Work", "Personal", "Trash"]
 
@@ -88,7 +88,7 @@ def test_all_notes_selected_by_default_shows_every_note(qapp):
     n2 = _note_window(title="Taxes", board_id="board-1")
     manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.rowCount() == 2
 
@@ -97,7 +97,7 @@ def test_search_filters_table_by_title_substring(qapp):
     n1 = _note_window(title="Groceries")
     n2 = _note_window(title="Taxes")
     manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     browser.search_edit.setText("tax")
 
@@ -112,7 +112,7 @@ def test_search_also_matches_note_body_not_just_title(qapp):
     n1 = _note_window(title="", body_text="Check out my songs, stories and poems!")
     n2 = _note_window(title="", body_text="Grocery list")
     manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     browser.search_edit.setText("poem")
 
@@ -125,7 +125,7 @@ def test_preview_column_shows_body_snippet_for_untitled_notes(qapp):
     nothing else to distinguish it from any other untitled note."""
     n1 = _note_window(title="", body_text="Check out my songs, stories and poems!")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 1).text() == "Check out my songs, stories and poems!"
 
@@ -134,7 +134,7 @@ def test_preview_column_collapses_whitespace_and_truncates(qapp):
     long_body = "word " * 30
     n1 = _note_window(title="", body_text=long_body)
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     preview = browser.table.item(0, 1).text()
     assert "\n" not in preview
@@ -146,7 +146,7 @@ def test_notepad_column_shows_board_name_when_attached(qapp):
     work = _board_window(name="Work")
     n1 = _note_window(title="Report", board_id=work.board.id)
     manager = _fake_manager(notes={n1.note.id: n1}, boards={work.board.id: work})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 2).text() == "Work"
 
@@ -154,7 +154,7 @@ def test_notepad_column_shows_board_name_when_attached(qapp):
 def test_notepad_column_blank_when_unfiled(qapp):
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 2).text() == ""
 
@@ -162,7 +162,7 @@ def test_notepad_column_blank_when_unfiled(qapp):
 def test_tags_column_shows_joined_tags(qapp):
     n1 = _note_window(title="Report", tags=["work", "urgent"])
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 4).text() == "work, urgent"
 
@@ -170,7 +170,7 @@ def test_tags_column_shows_joined_tags(qapp):
 def test_tags_column_blank_when_untagged(qapp):
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 4).text() == ""
 
@@ -179,7 +179,7 @@ def test_tree_has_no_tags_section_when_no_notes_are_tagged(qapp):
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert "Tags" not in _tree_labels(browser)
 
@@ -189,7 +189,7 @@ def test_tree_tags_section_lists_unique_tags_in_use(qapp):
     n2 = _note_window(title="Groceries", tags=["urgent", "home"])
     manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
     child_labels = [tags_item.child(i).text(0) for i in range(tags_item.childCount())]
@@ -200,7 +200,7 @@ def test_selecting_tag_filters_table_to_notes_with_that_tag(qapp):
     n_work = _note_window(title="Report", tags=["work"])
     n_other = _note_window(title="Groceries", tags=["home"])
     manager = _fake_manager(notes={n_work.note.id: n_work, n_other.note.id: n_other})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
     work_item = next(
         tags_item.child(i) for i in range(tags_item.childCount()) if tags_item.child(i).text(0) == "work"
@@ -217,7 +217,7 @@ def test_tags_parent_item_is_not_selectable(qapp):
     filtering meaning of its own — only its children do."""
     n1 = _note_window(title="Report", tags=["work"])
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
 
@@ -230,7 +230,7 @@ def test_orphaned_tag_disappears_after_refresh(qapp):
     refresh rather than a separate registry."""
     n1 = _note_window(title="Report", tags=["work"])
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     assert "Tags" in _tree_labels(browser)
 
     n1.note.tags = []
@@ -243,7 +243,7 @@ def test_search_field_has_a_clear_button(qapp):
     """Regression: there was previously no way to clear the search box
     short of manually deleting the typed text."""
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.search_edit.isClearButtonEnabled()
 
@@ -256,7 +256,7 @@ def test_selecting_board_narrows_table_to_that_boards_notes(qapp):
         notes={n_work.note.id: n_work, n_other.note.id: n_other},
         boards={work.board.id: work},
     )
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     board_item = browser.tree.topLevelItem(2)
     assert board_item.text(0) == "Work"
 
@@ -270,7 +270,7 @@ def test_selecting_unfiled_shows_only_notes_without_a_board(qapp):
     n_filed = _note_window(title="Report", board_id="board-1")
     n_unfiled = _note_window(title="Groceries")
     manager = _fake_manager(notes={n_filed.note.id: n_filed, n_unfiled.note.id: n_unfiled})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     unfiled_item = browser.tree.topLevelItem(1)
     assert unfiled_item.data(0, Qt.UserRole) == UNFILED
 
@@ -288,7 +288,7 @@ def test_delete_selected_note_confirms_then_calls_manager_trash_note(qapp, monke
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     browser.table.selectRow(0)
 
     browser._delete_selected_notes()
@@ -301,7 +301,7 @@ def test_delete_selected_note_does_nothing_when_declined(qapp, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.No))
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     browser.table.selectRow(0)
 
     browser._delete_selected_notes()
@@ -317,7 +317,7 @@ def test_multi_select_delete_asks_once_and_trashes_every_selected_note(qapp, mon
     n1 = _note_window(title="Groceries")
     n2 = _note_window(title="Taxes")
     manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     browser.table.selectAll()
 
     browser._delete_selected_notes()
@@ -327,7 +327,7 @@ def test_multi_select_delete_asks_once_and_trashes_every_selected_note(qapp, mon
     manager.trash_note.assert_any_call(n2)
 
 
-def _select_tree_item(browser: NotesBrowserWindow, label: str):
+def _select_tree_item(browser: NotesManagerWindow, label: str):
     for i in range(browser.tree.topLevelItemCount()):
         item = browser.tree.topLevelItem(i)
         if item.text(0) == label:
@@ -340,7 +340,7 @@ def test_delete_selected_note_in_trash_view_deletes_permanently(qapp, monkeypatc
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     n1 = _note_window(title="Groceries", deleted_at="2026-01-01T00:00:00+00:00")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     _select_tree_item(browser, "Trash")
     browser.table.selectRow(0)
 
@@ -353,7 +353,7 @@ def test_delete_selected_note_in_trash_view_deletes_permanently(qapp, monkeypatc
 def test_restore_selected_notes_calls_manager_restore_note(qapp):
     n1 = _note_window(title="Groceries", deleted_at="2026-01-01T00:00:00+00:00")
     manager = _fake_manager(notes={n1.note.id: n1})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     _select_tree_item(browser, "Trash")
     browser.table.selectRow(0)
 
@@ -367,7 +367,7 @@ def test_trashed_notes_excluded_from_all_notes(qapp):
     trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
     manager = _fake_manager(notes={active.note.id: active, trashed.note.id: trashed})
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.rowCount() == 1
     assert browser.table.item(0, 0).text() == "Groceries"
@@ -377,7 +377,7 @@ def test_trash_view_shows_only_trashed_notes(qapp):
     active = _note_window(title="Groceries")
     trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
     manager = _fake_manager(notes={active.note.id: active, trashed.note.id: trashed})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     _select_tree_item(browser, "Trash")
 
@@ -387,7 +387,7 @@ def test_trash_view_shows_only_trashed_notes(qapp):
 
 def test_toolbar_shows_restore_and_relabels_delete_only_in_trash_view(qapp):
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert not browser.restore_btn.isVisible()
     assert browser.delete_btn.text() == "Delete"
@@ -401,7 +401,7 @@ def test_toolbar_shows_restore_and_relabels_delete_only_in_trash_view(qapp):
 def test_double_clicking_a_trashed_note_does_not_show_it(qapp):
     trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
     manager = _fake_manager(notes={trashed.note.id: trashed})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     _select_tree_item(browser, "Trash")
     browser.table.selectRow(0)
 
@@ -414,7 +414,7 @@ def test_table_allows_extended_selection(qapp):
     from PySide6.QtWidgets import QAbstractItemView
 
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.table.selectionMode() == QAbstractItemView.ExtendedSelection
 
@@ -423,7 +423,7 @@ def test_restores_saved_window_geometry(qapp):
     settings = Settings(notes_browser_x=50, notes_browser_y=60, notes_browser_w=800, notes_browser_h=500)
     manager = _fake_manager(settings=settings)
 
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     assert browser.size().width() == 800
     assert browser.size().height() == 500
@@ -433,7 +433,7 @@ def test_restores_saved_window_geometry(qapp):
 
 def test_resizing_persists_geometry_and_schedules_save(qapp):
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
     browser.resize(600, 400)
 
@@ -444,7 +444,7 @@ def test_resizing_persists_geometry_and_schedules_save(qapp):
 
 def test_new_note_on_all_notes_creates_unattached_note(qapp):
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     assert browser._current_tree_filter() == ALL_NOTES
 
     browser._create_note()
@@ -455,7 +455,7 @@ def test_new_note_on_all_notes_creates_unattached_note(qapp):
 def test_new_note_with_board_selected_attaches_to_that_board(qapp):
     work = _board_window(name="Work")
     manager = _fake_manager(boards={work.board.id: work})
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     board_item = browser.tree.topLevelItem(2)
     browser.tree.setCurrentItem(board_item)
 
@@ -466,15 +466,15 @@ def test_new_note_with_board_selected_attaches_to_that_board(qapp):
 
 def test_window_title_does_not_duplicate_app_name(qapp):
     """Regression, found via a live screenshot (test case 8.8): the
-    window rendered as "Take Note! — Notes Browser — Take Note!" — the
+    window rendered as "Take Note! — Notes Manager — Take Note!" — the
     OS/WM already appends " — Take Note!" automatically (same behavior
     already confirmed for dialog titles), so this window's own hardcoded
     "Take Note! —" prefix was a redundant duplicate. Every other window
     in the app already just sets its own plain descriptive title."""
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
 
-    assert browser.windowTitle() == "Notes Browser"
+    assert browser.windowTitle() == "Notes Manager"
 
 
 def test_preview_column_has_a_minimum_width(qapp):
@@ -492,7 +492,7 @@ def test_preview_column_has_a_minimum_width(qapp):
     against the header's own real requirement instead, which is exactly
     what the fix itself now does."""
     manager = _fake_manager()
-    browser = NotesBrowserWindow(manager)
+    browser = NotesManagerWindow(manager)
     header = browser.table.horizontalHeader()
 
     assert header.minimumSectionSize() == header.sectionSizeHint(1)

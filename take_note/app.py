@@ -12,7 +12,7 @@ from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
 from .models import SWATCHES, Board, Note, Settings
 from .note_window import NoteWindow
-from .notes_browser import NotesBrowserWindow
+from .notes_manager import NotesManagerWindow
 from .settings_dialog import SettingsDialog
 from .tray import TrayIcon
 
@@ -33,7 +33,7 @@ class NoteManager(QObject):
 
     # Piggybacks on every existing _schedule_save() call site (create/delete
     # note or board, attach/detach, and any note/board's own `changed`
-    # signal) so the Notes Browser can stay live without new call sites.
+    # signal) so the Notes Manager can stay live without new call sites.
     notes_changed = Signal()
 
     def __init__(self, app: QApplication):
@@ -41,7 +41,7 @@ class NoteManager(QObject):
         self.app = app
         self.notes: dict[str, NoteWindow] = {}
         self.boards: dict[str, NotepadWindow] = {}
-        self.notes_browser: "NotesBrowserWindow | None" = None
+        self.notes_manager: "NotesManagerWindow | None" = None
         # Cascades each new standalone note CASCADE_OFFSET further from the
         # last, so creating several in a row doesn't stack them exactly on
         # top of each other (confusing — no visible sign a new note even
@@ -68,8 +68,8 @@ class NoteManager(QObject):
 
         self.hotkey: HotkeyListener | None = None
         self._start_hotkey_listener()
-        self.notes_browser_hotkey: HotkeyListener | None = None
-        self._start_notes_browser_hotkey_listener()
+        self.notes_manager_hotkey: HotkeyListener | None = None
+        self._start_notes_manager_hotkey_listener()
         self.show_hide_all_notes_hotkey: HotkeyListener | None = None
         self._start_show_hide_all_notes_hotkey_listener()
         self.roll_all_notes_hotkey: HotkeyListener | None = None
@@ -163,7 +163,7 @@ class NoteManager(QObject):
 
     def trash_note(self, note_window: NoteWindow):
         """Soft delete — the note stays in self.notes/notes.json (so
-        Restore and the Notes Browser's Trash view both work without a
+        Restore and the Notes Manager's Trash view both work without a
         separate data path) but hidden, same mechanism as the existing
         session-only "Hide Note" except deleted_at makes it persist
         across restarts. Deliberately doesn't touch board_id, unlike
@@ -250,15 +250,15 @@ class NoteManager(QObject):
         board_window.deleteLater()
         self._schedule_save()
 
-    # -- notes browser -----------------------------------------------------
+    # -- notes manager -----------------------------------------------------
 
-    def open_notes_browser(self):
-        if self.notes_browser is None:
-            self.notes_browser = NotesBrowserWindow(self)
+    def open_notes_manager(self):
+        if self.notes_manager is None:
+            self.notes_manager = NotesManagerWindow(self)
         else:
-            self.notes_browser.show()
-            self.notes_browser.raise_()
-            self.notes_browser.activateWindow()
+            self.notes_manager.show()
+            self.notes_manager.raise_()
+            self.notes_manager.activateWindow()
 
     # -- settings ------------------------------------------------------
 
@@ -287,7 +287,7 @@ class NoteManager(QObject):
 
     def _apply_settings(self, new_settings: Settings):
         hotkey_changed = new_settings.hotkey != self.settings.hotkey
-        notes_browser_hotkey_changed = (
+        notes_manager_hotkey_changed = (
             new_settings.notes_browser_hotkey != self.settings.notes_browser_hotkey
         )
         show_hide_all_notes_hotkey_changed = (
@@ -311,8 +311,8 @@ class NoteManager(QObject):
         if hotkey_changed:
             self._restart_hotkey_listener()
 
-        if notes_browser_hotkey_changed:
-            self._restart_notes_browser_hotkey_listener()
+        if notes_manager_hotkey_changed:
+            self._restart_notes_manager_hotkey_listener()
 
         if show_hide_all_notes_hotkey_changed:
             self._restart_show_hide_all_notes_hotkey_listener()
@@ -350,20 +350,20 @@ class NoteManager(QObject):
             self.hotkey.stop()
         self._start_hotkey_listener()
 
-    def _start_notes_browser_hotkey_listener(self):
+    def _start_notes_manager_hotkey_listener(self):
         if not self.settings.notes_browser_hotkey:
-            self.notes_browser_hotkey = None
+            self.notes_manager_hotkey = None
             return
         key, modifiers = parse_shortcut(self.settings.notes_browser_hotkey)
-        self.notes_browser_hotkey = HotkeyListener(key, modifiers)
-        self.notes_browser_hotkey.triggered.connect(lambda: self.open_notes_browser())
-        self.notes_browser_hotkey.grab_failed.connect(lambda: self._on_hotkey_failed("Notes Browser"))
-        self.notes_browser_hotkey.start()
+        self.notes_manager_hotkey = HotkeyListener(key, modifiers)
+        self.notes_manager_hotkey.triggered.connect(lambda: self.open_notes_manager())
+        self.notes_manager_hotkey.grab_failed.connect(lambda: self._on_hotkey_failed("Notes Manager"))
+        self.notes_manager_hotkey.start()
 
-    def _restart_notes_browser_hotkey_listener(self):
-        if self.notes_browser_hotkey is not None:
-            self.notes_browser_hotkey.stop()
-        self._start_notes_browser_hotkey_listener()
+    def _restart_notes_manager_hotkey_listener(self):
+        if self.notes_manager_hotkey is not None:
+            self.notes_manager_hotkey.stop()
+        self._start_notes_manager_hotkey_listener()
 
     def _start_show_hide_all_notes_hotkey_listener(self):
         if not self.settings.show_hide_all_notes_hotkey:
@@ -437,8 +437,8 @@ class NoteManager(QObject):
     def _on_about_to_quit(self):
         if self.hotkey is not None:
             self.hotkey.stop()
-        if self.notes_browser_hotkey is not None:
-            self.notes_browser_hotkey.stop()
+        if self.notes_manager_hotkey is not None:
+            self.notes_manager_hotkey.stop()
         if self.show_hide_all_notes_hotkey is not None:
             self.show_hide_all_notes_hotkey.stop()
         if self.roll_all_notes_hotkey is not None:

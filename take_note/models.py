@@ -147,8 +147,8 @@ class Settings:
     bring_all_notes_to_front_hotkey: str | None = None
     spell_check_enabled: bool = False
 
-    # None until the Notes Browser has actually been moved/resized once —
-    # lets it fall back to NotesBrowserWindow's own built-in default
+    # None until the Notes Manager has actually been moved/resized once —
+    # lets it fall back to NotesManagerWindow's own built-in default
     # geometry on first run rather than every user starting at (0, 0).
     notes_browser_x: int | None = None
     notes_browser_y: int | None = None

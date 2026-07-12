@@ -62,7 +62,7 @@ class SettingsDialog(QDialog):
     def _restore_geometry(self):
         # self._settings is the same object NoteManager holds (passed by
         # reference, not copied), so writing into it directly here — same
-        # pattern as NotesBrowserWindow's notes_browser_x/y/w/h — persists
+        # pattern as NotesManagerWindow's notes_browser_x/y/w/h — persists
         # regardless of whether the dialog is ultimately OK'd or
         # cancelled, since window chrome position isn't really a "setting"
         # the user is choosing to discard.
@@ -301,14 +301,14 @@ class SettingsDialog(QDialog):
         form.addRow(QLabel(""))  # spacer between hotkey sections
 
         (
-            self.notes_browser_hotkey_edit,
-            self.notes_browser_hotkey_clear_button,
-            notes_browser_test_btn,
-            self.notes_browser_hotkey_status,
+            self.notes_manager_hotkey_edit,
+            self.notes_manager_hotkey_clear_button,
+            notes_manager_test_btn,
+            self.notes_manager_hotkey_status,
         ) = self._build_hotkey_row(
-            form, "Global hotkey to open the Notes Browser:", self._settings.notes_browser_hotkey
+            form, "Global hotkey to open the Notes Manager:", self._settings.notes_browser_hotkey
         )
-        notes_browser_test_btn.clicked.connect(self._test_notes_browser_hotkey)
+        notes_manager_test_btn.clicked.connect(self._test_notes_manager_hotkey)
 
         form.addRow(QLabel(""))
 
@@ -359,7 +359,7 @@ class SettingsDialog(QDialog):
         line, matching the layout every hotkey section in this tab uses.
         Returns the widgets rather than storing them directly, since the
         caller needs to keep the existing self.hotkey_edit/
-        self.notes_browser_hotkey_edit/etc. attribute names other code
+        self.notes_manager_hotkey_edit/etc. attribute names other code
         (and tests) already reference by name."""
         form.addRow(QLabel(label))
         edit = QKeySequenceEdit(QKeySequence(current_value or ""))
@@ -381,7 +381,7 @@ class SettingsDialog(QDialog):
     def _all_hotkey_edits(self) -> list[tuple[QKeySequenceEdit, str]]:
         return [
             (self.hotkey_edit, "New Note"),
-            (self.notes_browser_hotkey_edit, "Notes Browser"),
+            (self.notes_manager_hotkey_edit, "Notes Manager"),
             (self.show_hide_all_notes_hotkey_edit, "Show/Hide All Notes"),
             (self.roll_all_notes_hotkey_edit, "Roll Up/Down Notes"),
             (self.bring_all_notes_to_front_hotkey_edit, "Bring Notes on Top"),
@@ -390,10 +390,10 @@ class SettingsDialog(QDialog):
     def _test_hotkey(self):
         self._test_hotkey_combo(self.hotkey_edit, self.hotkey_status, self._settings.hotkey)
 
-    def _test_notes_browser_hotkey(self):
+    def _test_notes_manager_hotkey(self):
         self._test_hotkey_combo(
-            self.notes_browser_hotkey_edit,
-            self.notes_browser_hotkey_status,
+            self.notes_manager_hotkey_edit,
+            self.notes_manager_hotkey_status,
             self._settings.notes_browser_hotkey,
         )
 
@@ -512,7 +512,7 @@ class SettingsDialog(QDialog):
             # cleared-but-otherwise-untouched field had no way to mean
             # anything other than "leave the old combo alone".
             hotkey=self.hotkey_edit.keySequence().toString() or None,
-            notes_browser_hotkey=self.notes_browser_hotkey_edit.keySequence().toString() or None,
+            notes_browser_hotkey=self.notes_manager_hotkey_edit.keySequence().toString() or None,
             show_hide_all_notes_hotkey=(
                 self.show_hide_all_notes_hotkey_edit.keySequence().toString() or None
             ),
