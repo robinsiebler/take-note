@@ -1198,7 +1198,24 @@ class NoteWindow(QWidget):
         self._center_dialog_over_note(dialog)
         if dialog.exec() != QFontDialog.Accepted:
             return
-        self.body.setCurrentFont(dialog.currentFont())
+        # Only family + size, not weight/italic/underline/strikethrough
+        # (those already have their own dedicated Ctrl+B/I/U/K actions
+        # and menu entries) — reported live: on a selection with mixed
+        # bold/non-bold text, currentFont() resolves the ambiguity to
+        # "not bold" for the dialog's own initial state, and even
+        # changing only the size then had setCurrentFont() write that
+        # explicit "not bold" back across the *whole* selection,
+        # silently stripping bold from text the user never touched.
+        # setCurrentFont() applies an entire QFont wholesale, all
+        # properties at once, with no partial-merge option — a
+        # QTextCharFormat with only family/size set + mergeCurrentChar
+        # Format() touches just those two, leaving each character's own
+        # actual weight/style alone.
+        chosen = dialog.currentFont()
+        fmt = QTextCharFormat()
+        fmt.setFontFamilies([chosen.family()])
+        fmt.setFontPointSize(chosen.pointSize())
+        self.body.mergeCurrentCharFormat(fmt)
         self.mark_changed()
 
     def _new_note_dialog(self, title: str, label: str, initial: str) -> QInputDialog:

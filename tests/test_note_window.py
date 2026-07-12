@@ -952,6 +952,38 @@ def test_show_font_dialog_cancelled_leaves_font_unchanged(qapp, monkeypatch):
     assert win.body.fontPointSize() == before_size
 
 
+def test_show_font_dialog_preserves_bold_on_mixed_selection(qapp, monkeypatch):
+    """Regression, reported live: bolding one word in a selection, then
+    opening Font... on the whole selection and changing only the size,
+    silently stripped bold from the word that had it. Root cause:
+    currentFont() on a mixed-bold selection resolves the ambiguity to
+    "not bold" for the dialog's own initial state, and setCurrentFont()
+    (the old implementation) applies an entire QFont wholesale -- even
+    though the user only touched the size field, the dialog's returned
+    font still carried that "not bold" explicitly, wiping bold from the
+    one word that actually had it. show_font_dialog() now only merges
+    family/size, leaving each character's own actual weight alone."""
+    win = make_note_window("plain BOLD plain")
+    cursor = win.body.textCursor()
+    cursor.setPosition(len("plain "))
+    cursor.setPosition(len("plain BOLD"), QTextCursor.KeepAnchor)
+    win.body.setTextCursor(cursor)
+    win._toggle_bold()
+    select_all(win)
+
+    chosen_font = QFont("Noto Sans", 24)
+    monkeypatch.setattr(QFontDialog, "exec", lambda self: QFontDialog.Accepted)
+    monkeypatch.setattr(QFontDialog, "currentFont", lambda self: chosen_font)
+    win.show_font_dialog()
+
+    bold_cursor = win.body.textCursor()
+    bold_cursor.setPosition(len("plain "))
+    bold_cursor.setPosition(len("plain BOLD"), QTextCursor.KeepAnchor)
+    fmt = bold_cursor.charFormat()
+    assert fmt.fontWeight() > QFont.Normal
+    assert fmt.fontPointSize() == 24
+
+
 def test_text_menu_has_font_dialog_action(qapp):
     win = make_note_window("Some text")
     menu = QMenu()
