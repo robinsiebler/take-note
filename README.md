@@ -33,9 +33,13 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 - Global hotkey (default `Ctrl+Alt+N`, user-configurable in Settings) to
   create a new note from anywhere.
 - Notes Browser (tray → "Notes Browser…"): a sortable, searchable table
-  of every note (Title/Preview/Notepad/Date Modified columns) plus a
-  tree of boards to filter by, for finding a note (including a hidden
-  one) without hunting across the desktop.
+  of every note (Title/Preview/Notepad/Date Modified/Tags columns) plus
+  a tree of boards and tags to filter by, for finding a note (including
+  a hidden one) without hunting across the desktop.
+- Tags: free-form, per-note tags (no predefined list) assigned via the
+  hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
+  Notes Browser only for now — no indicator on the note window itself
+  yet.
 - Settings dialog (tray → Settings…): launch at login, default note
   color/font size/color, whether new notes start always-on-top, optional
   spell check, and a hotkey recorder that live-tests a combo for
@@ -139,12 +143,12 @@ Notes and boards are stored as a single JSON file at
 Everything originally planned for v1-v3 (bullets & numbering, note
 transparency, a font picker, hyperlinks, embedded images, in-note Find,
 Lock Note, Note title, "Stick to Window", bulk tray actions, the Notes
-Browser, and a manual test plan under `test_cases/`) is done — see
+Browser, tags, and a manual test plan under `test_cases/`) is done — see
 Features above rather than re-deriving it from history here.
 
 **Still open, lower priority:**
-- Tags — only pays off once a way to filter by them exists (the Notes
-  Browser now does, so this is unblocked whenever it's picked up)
+- A small indicator on the note window itself for tagged notes (Tags are
+  currently Notes-Browser-only)
 - Reminders / alarms (needs a real notification/alarm subsystem)
 - Interactive checklists inside notes (needs a custom `QTextObjectInterface`,
   unlike bullets/numbering above)
