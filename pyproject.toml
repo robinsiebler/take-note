@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "take-note"
 version = "1.0.0"
 description = "A sticky notes app for Linux (Python + PySide6/Qt6) — rich text, tags, notepads, and a searchable Notes Browser."
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6",
