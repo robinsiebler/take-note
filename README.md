@@ -14,15 +14,24 @@ See [FEATURES.md](FEATURES.md) for the full, detailed list.
 
 ## Setup
 
-Install directly from GitHub (no clone needed):
+### Install
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install git+https://github.com/robinsiebler/take-note.git
-.venv/bin/take-note
+pip install --user git+https://github.com/robinsiebler/take-note.git
 ```
 
-Or clone and install from source:
+After installing:
+
+```bash
+take-note
+```
+
+`--user` installs alongside your system Python rather than into an
+isolated venv, and the `take-note` command lands in `~/.local/bin`,
+which is on `PATH` by default on most distros. PySide6 ships prebuilt
+wheels for this, so nothing needs to be compiled.
+
+### Developing (from a clone)
 
 ```bash
 git clone https://github.com/robinsiebler/take-note.git
@@ -31,6 +40,10 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 .venv/bin/take-note
 ```
+
+An editable venv install keeps dev tooling (pytest, etc.) isolated
+from your system Python while you're changing code — see
+[Tests](#tests) below.
 
 ## Spell check (optional)
 
@@ -41,7 +54,7 @@ since Enchant is a C library, not a Python package. On Fedora/Nobara:
 
 ```bash
 sudo dnf install enchant2 hunspell hunspell-en-US
-.venv/bin/pip install -e ".[spellcheck]"
+pip install --user "take-note[spellcheck] @ git+https://github.com/robinsiebler/take-note.git"
 ```
 
 On Debian/Ubuntu (package names believed correct, not independently
@@ -49,8 +62,11 @@ verified — no `apt` available in this project's own dev/test environment):
 
 ```bash
 sudo apt install libenchant-2-2 hunspell-en-us
-.venv/bin/pip install -e ".[spellcheck]"
+pip install --user "take-note[spellcheck] @ git+https://github.com/robinsiebler/take-note.git"
 ```
+
+From a clone (see [Developing](#developing-from-a-clone) above), add the
+extra to the editable install instead: `.venv/bin/pip install -e ".[spellcheck]"`.
 
 If either half is missing, the checkbox in Settings is disabled with an
 explanatory label rather than silently doing nothing.
