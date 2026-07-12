@@ -39,9 +39,7 @@ class SettingsDialog(QDialog):
         self._pending_color = settings.default_color
         self._pending_font_color = settings.default_font_color
         self._test_listener: HotkeyListener | None = None
-        # Captured before _restore_geometry()/resizeEvent() can write
-        # anything into self._settings — see showEvent() below.
-        self._had_saved_geometry = bool(settings.settings_dialog_w and settings.settings_dialog_h)
+        self._geometry_grown_to_fit = False
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -73,20 +71,32 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # No saved geometry (first ever run, or a fresh Settings) — Qt's
-        # own default first-show size here is noticeably smaller than
-        # sizeHint() (confirmed directly, e.g. 426x637 vs. a true
-        # 695x666), clipping content at the bottom rather than growing
-        # to fit it. Deliberately done here, not in _restore_geometry()
+        # Never let a restored (or Qt's own too-small default first-show)
+        # size clip content — confirmed live twice: once with no saved
+        # geometry at all (Qt's own default first-show size here is
+        # noticeably smaller than sizeHint(), e.g. 426x637 vs. a true
+        # 695x666), and again with a *saved* geometry from before a
+        # later content change (the spell-check label growing) made it
+        # insufficient — a stale saved size clips just as badly as no
+        # saved size at all, and nothing before this ever re-checked it
+        # against current content. Only grows dimensions that are
+        # actually too small, so an intentionally-larger custom size is
+        # left alone. Deliberately done here, not in _restore_geometry()
         # (called from __init__, before the dialog is ever shown/laid
         # out): reported live that resizing that early produced a
         # visually broken dialog (clipped color swatch grids, stray
         # unpainted regions) on the real desktop, where actual fonts/DPI
         # scaling can make sizeHint() computed before first paint
-        # unreliable. Guarded to only ever fire once.
-        if not self._had_saved_geometry:
-            self._had_saved_geometry = True
-            self.resize(self.sizeHint())
+        # unreliable. Guarded to only ever run once.
+        if self._geometry_grown_to_fit:
+            return
+        self._geometry_grown_to_fit = True
+        needed = self.sizeHint()
+        current = self.size()
+        grown_w = max(current.width(), needed.width())
+        grown_h = max(current.height(), needed.height())
+        if (grown_w, grown_h) != (current.width(), current.height()):
+            self.resize(grown_w, grown_h)
 
     def moveEvent(self, event):
         super().moveEvent(event)
