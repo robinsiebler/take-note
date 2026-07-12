@@ -28,9 +28,11 @@
   instead.
 - System tray icon: create notes/boards, open the Notes Browser, open
   Settings, quit.
-- Two global hotkeys, both user-configurable in Settings: create a new
-  note from anywhere (default `Meta+Alt+N`), and open the Notes Browser
-  from anywhere (default `Meta+Alt+B`).
+- Five global hotkeys, all user-configurable in Settings: create a new
+  note (default `Meta+Alt+N`), open the Notes Browser (default
+  `Meta+Alt+B`), and — with no default combo, opt-in only — show/hide
+  all notes, roll up/down all notes, and bring all notes to front,
+  mirroring the tray menu's own bulk actions below.
 - Notes Browser (tray → "Notes Browser…", or its own global hotkey
   above): a sortable, searchable table of every note (Title/Preview/
   Notepad/Date Modified/Tags columns) plus a tree of boards, tags, and
@@ -56,11 +58,17 @@
   for the full tag list, click it to open the Tags… dialog directly.
 - Settings dialog (tray → Settings…): launch at login, default note
   color/font size/color, whether new notes start always-on-top, optional
-  spell check, and a hotkey recorder (one for each global hotkey above)
-  that live-tests a combo for conflicts — with either app itself or the
-  other hotkey — before committing to it. Has Apply (try a setting without
-  closing the dialog) alongside OK/Cancel, and remembers its own window
-  position across restarts.
+  spell check, and a hotkey recorder (one for each global hotkey above,
+  each with its own Clear button to unbind it entirely) that live-tests
+  a combo for conflicts — with this app's own other live hotkeys, or
+  anything else already holding it — before committing to it. The
+  Hotkey tab scrolls rather than growing the whole dialog to fit, and
+  starts with a note that a combo already grabbed by a system-level
+  shortcut (KWin's own global shortcuts, etc.) won't register in the
+  field at all — not something the app can reliably detect ahead of
+  time. Has Apply (try a setting without closing the dialog) alongside
+  OK/Cancel, and
+  remembers its own window position across restarts.
 - Notepads: group notes onto a shared corkboard-style window that shows,
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark
@@ -80,11 +88,12 @@
   either.
 - Note title (hamburger ☰ menu's first item, or Shift+F2): shows as a bold
   line above the note body, only when set.
-- Tray menu bulk actions: Bring Notes on Top, Show/Hide All Notes
-  (collapses to one item, converging to all-shown or all-hidden), and
-  Roll Up/Down Notes (rolls every note up if any are expanded, otherwise
-  expands them all — one consistent end state for the whole batch rather
-  than flipping each note independently). A single note can also be
-  hidden on its own via the header/hamburger menu — session-only, same
-  as the bulk actions, and still listed (and reopenable) in the Notes
-  Browser while hidden.
+- Tray menu bulk actions (each also has its own optional global hotkey,
+  see above): Bring Notes on Top, Show/Hide All Notes (collapses to one
+  item, converging to all-shown or all-hidden), and Roll Up/Down Notes
+  (rolls every note up if any are expanded, otherwise expands them
+  all — one consistent end state for the whole batch rather than
+  flipping each note independently). A single note can also be hidden
+  on its own via the header/hamburger menu — session-only, same as the
+  bulk actions, and still listed (and reopenable) in the Notes Browser
+  while hidden.

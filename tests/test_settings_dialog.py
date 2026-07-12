@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QToolButton
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QToolButton
 
 from take_note import spellcheck
 from take_note.models import FONT_SWATCHES, Settings
@@ -167,13 +167,55 @@ def test_resizing_persists_geometry_into_the_same_settings_object(qapp):
     dialog = SettingsDialog(settings)
     dialog.show()
 
-    dialog.resize(700, 600)
+    dialog.resize(700, 700)
     dialog.move(70, 80)
 
     assert settings.settings_dialog_w == 700
-    assert settings.settings_dialog_h == 600
+    assert settings.settings_dialog_h == 700
     assert settings.settings_dialog_x == 70
     assert settings.settings_dialog_y == 80
+
+
+def test_hotkey_tab_is_scrollable(qapp):
+    """Regression: five stacked hotkey sections (up from two) gave the
+    Hotkey tab's own QFormLayout a real minimum-size floor tall enough
+    to fill both of the reporting user's monitors and make the dialog
+    impossible to shrink at all — not just visually cramped, a genuine
+    resize-below-minimum block. Wrapping the tab in a QScrollArea (see
+    SettingsDialog._scrollable's own docstring) decouples the dialog's
+    own minimum size from the tab's full content height."""
+    dialog = SettingsDialog(Settings())
+
+    scroll_area = dialog.findChild(QScrollArea)
+
+    assert scroll_area is not None
+    assert scroll_area.widgetResizable()
+
+
+def test_hotkey_tab_explains_combos_that_never_reach_the_field(qapp):
+    """A combo already grabbed by a system-level shortcut (e.g. KWin's
+    own) never reaches this dialog at all — no reliable way to detect
+    every such conflict ahead of time (see _build_hotkey_tab's own
+    docstring on why), so this is a plain explanatory hint rather than
+    an automated check."""
+    dialog = SettingsDialog(Settings())
+
+    labels = [w.text() for w in dialog.findChildren(QLabel)]
+
+    assert any("already grabbed by a system shortcut" in text for text in labels)
+
+
+def test_dialog_can_shrink_well_below_the_hotkey_tabs_full_content_height(qapp):
+    dialog = SettingsDialog(Settings())
+    dialog.show()
+
+    dialog.resize(400, 300)
+
+    # Not asserting an exact floor (that's the General tab's own natural
+    # size, not something this test should pin down precisely) — just
+    # that it's nowhere near tall enough to need the full ~920px the
+    # Hotkey tab's five sections would require unscrolled.
+    assert dialog.height() < 700
 
 
 def test_result_settings_preserves_dialog_geometry(qapp):
@@ -350,6 +392,91 @@ def test_test_hotkey_allows_a_combo_matching_neither_field(qapp, monkeypatch):
 
     assert dialog.hotkey_status.text() == "Testing…"
     assert len(started) == 1
+
+
+def test_new_bulk_action_hotkey_fields_default_to_empty(qapp):
+    """Unlike hotkey/notes_browser_hotkey, these three have no default
+    combo — explicit user call, opt-in only. A fresh Settings() must
+    show all three fields empty, not some guessed-at default."""
+    dialog = SettingsDialog(Settings())
+
+    assert dialog.show_hide_all_notes_hotkey_edit.keySequence().isEmpty()
+    assert dialog.roll_all_notes_hotkey_edit.keySequence().isEmpty()
+    assert dialog.bring_all_notes_to_front_hotkey_edit.keySequence().isEmpty()
+
+
+def test_bulk_action_hotkey_fields_initialize_from_settings(qapp):
+    dialog = SettingsDialog(
+        Settings(
+            show_hide_all_notes_hotkey="Meta+Alt+H",
+            roll_all_notes_hotkey="Meta+Alt+R",
+            bring_all_notes_to_front_hotkey="Meta+Alt+T",
+        )
+    )
+
+    assert dialog.show_hide_all_notes_hotkey_edit.keySequence().toString() == "Meta+Alt+H"
+    assert dialog.roll_all_notes_hotkey_edit.keySequence().toString() == "Meta+Alt+R"
+    assert dialog.bring_all_notes_to_front_hotkey_edit.keySequence().toString() == "Meta+Alt+T"
+
+
+def test_result_settings_reflects_changed_bulk_action_hotkeys(qapp):
+    dialog = SettingsDialog(Settings())
+    dialog.show_hide_all_notes_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+H"))
+    dialog.roll_all_notes_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+R"))
+    dialog.bring_all_notes_to_front_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+T"))
+
+    result = dialog.result_settings()
+
+    assert result.show_hide_all_notes_hotkey == "Meta+Alt+H"
+    assert result.roll_all_notes_hotkey == "Meta+Alt+R"
+    assert result.bring_all_notes_to_front_hotkey == "Meta+Alt+T"
+
+
+def test_bulk_action_hotkey_clear_buttons_empty_their_fields(qapp):
+    dialog = SettingsDialog(
+        Settings(
+            show_hide_all_notes_hotkey="Meta+Alt+H",
+            roll_all_notes_hotkey="Meta+Alt+R",
+            bring_all_notes_to_front_hotkey="Meta+Alt+T",
+        )
+    )
+
+    dialog.show_hide_all_notes_hotkey_clear_button.click()
+    dialog.roll_all_notes_hotkey_clear_button.click()
+    dialog.bring_all_notes_to_front_hotkey_clear_button.click()
+
+    assert dialog.show_hide_all_notes_hotkey_edit.keySequence().isEmpty()
+    assert dialog.roll_all_notes_hotkey_edit.keySequence().isEmpty()
+    assert dialog.bring_all_notes_to_front_hotkey_edit.keySequence().isEmpty()
+
+
+def test_test_bulk_action_hotkey_rejects_combo_matching_any_other_field(qapp):
+    """Five hotkeys now share one combo space — this checks a pairing
+    that isn't the original two (hotkey/notes_browser_hotkey) to prove
+    the cross-check in _test_hotkey_combo actually scans every other
+    field, not just one hardcoded one."""
+    settings = Settings(roll_all_notes_hotkey="Meta+Alt+R")
+    dialog = SettingsDialog(settings)
+    dialog.show_hide_all_notes_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+R"))
+
+    dialog._test_show_hide_all_notes_hotkey()
+
+    assert (
+        dialog.show_hide_all_notes_hotkey_status.text()
+        == "Same as the Roll Up/Down Notes hotkey — pick a different combination"
+    )
+    assert dialog._test_listener is None
+
+
+def test_test_bring_all_notes_to_front_hotkey_recognizes_unchanged_current_combo(qapp):
+    settings = Settings(bring_all_notes_to_front_hotkey="Meta+Alt+T")
+    dialog = SettingsDialog(settings)
+    dialog.bring_all_notes_to_front_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+T"))
+
+    dialog._test_bring_all_notes_to_front_hotkey()
+
+    assert dialog.bring_all_notes_to_front_hotkey_status.text() == "This is already your current hotkey"
+    assert dialog._test_listener is None
 
 
 def test_spell_check_checkbox_reflects_settings_when_available(qapp, monkeypatch):

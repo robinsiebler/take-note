@@ -70,6 +70,12 @@ class NoteManager(QObject):
         self._start_hotkey_listener()
         self.notes_browser_hotkey: HotkeyListener | None = None
         self._start_notes_browser_hotkey_listener()
+        self.show_hide_all_notes_hotkey: HotkeyListener | None = None
+        self._start_show_hide_all_notes_hotkey_listener()
+        self.roll_all_notes_hotkey: HotkeyListener | None = None
+        self._start_roll_all_notes_hotkey_listener()
+        self.bring_all_notes_to_front_hotkey: HotkeyListener | None = None
+        self._start_bring_all_notes_to_front_hotkey_listener()
 
         self.app.setQuitOnLastWindowClosed(False)
         self.app.aboutToQuit.connect(self._on_about_to_quit)
@@ -284,6 +290,16 @@ class NoteManager(QObject):
         notes_browser_hotkey_changed = (
             new_settings.notes_browser_hotkey != self.settings.notes_browser_hotkey
         )
+        show_hide_all_notes_hotkey_changed = (
+            new_settings.show_hide_all_notes_hotkey != self.settings.show_hide_all_notes_hotkey
+        )
+        roll_all_notes_hotkey_changed = (
+            new_settings.roll_all_notes_hotkey != self.settings.roll_all_notes_hotkey
+        )
+        bring_all_notes_to_front_hotkey_changed = (
+            new_settings.bring_all_notes_to_front_hotkey
+            != self.settings.bring_all_notes_to_front_hotkey
+        )
         spell_check_changed = new_settings.spell_check_enabled != self.settings.spell_check_enabled
         self.settings = new_settings
 
@@ -297,6 +313,15 @@ class NoteManager(QObject):
 
         if notes_browser_hotkey_changed:
             self._restart_notes_browser_hotkey_listener()
+
+        if show_hide_all_notes_hotkey_changed:
+            self._restart_show_hide_all_notes_hotkey_listener()
+
+        if roll_all_notes_hotkey_changed:
+            self._restart_roll_all_notes_hotkey_listener()
+
+        if bring_all_notes_to_front_hotkey_changed:
+            self._restart_bring_all_notes_to_front_hotkey_listener()
 
         if spell_check_changed:
             for note_window in self.notes.values():
@@ -340,6 +365,59 @@ class NoteManager(QObject):
             self.notes_browser_hotkey.stop()
         self._start_notes_browser_hotkey_listener()
 
+    def _start_show_hide_all_notes_hotkey_listener(self):
+        if not self.settings.show_hide_all_notes_hotkey:
+            self.show_hide_all_notes_hotkey = None
+            return
+        key, modifiers = parse_shortcut(self.settings.show_hide_all_notes_hotkey)
+        self.show_hide_all_notes_hotkey = HotkeyListener(key, modifiers)
+        self.show_hide_all_notes_hotkey.triggered.connect(lambda: self.toggle_show_all_notes())
+        self.show_hide_all_notes_hotkey.grab_failed.connect(
+            lambda: self._on_hotkey_failed("Show/Hide All Notes")
+        )
+        self.show_hide_all_notes_hotkey.start()
+
+    def _restart_show_hide_all_notes_hotkey_listener(self):
+        if self.show_hide_all_notes_hotkey is not None:
+            self.show_hide_all_notes_hotkey.stop()
+        self._start_show_hide_all_notes_hotkey_listener()
+
+    def _start_roll_all_notes_hotkey_listener(self):
+        if not self.settings.roll_all_notes_hotkey:
+            self.roll_all_notes_hotkey = None
+            return
+        key, modifiers = parse_shortcut(self.settings.roll_all_notes_hotkey)
+        self.roll_all_notes_hotkey = HotkeyListener(key, modifiers)
+        self.roll_all_notes_hotkey.triggered.connect(lambda: self.toggle_roll_all_notes())
+        self.roll_all_notes_hotkey.grab_failed.connect(
+            lambda: self._on_hotkey_failed("Roll Up/Down Notes")
+        )
+        self.roll_all_notes_hotkey.start()
+
+    def _restart_roll_all_notes_hotkey_listener(self):
+        if self.roll_all_notes_hotkey is not None:
+            self.roll_all_notes_hotkey.stop()
+        self._start_roll_all_notes_hotkey_listener()
+
+    def _start_bring_all_notes_to_front_hotkey_listener(self):
+        if not self.settings.bring_all_notes_to_front_hotkey:
+            self.bring_all_notes_to_front_hotkey = None
+            return
+        key, modifiers = parse_shortcut(self.settings.bring_all_notes_to_front_hotkey)
+        self.bring_all_notes_to_front_hotkey = HotkeyListener(key, modifiers)
+        self.bring_all_notes_to_front_hotkey.triggered.connect(
+            lambda: self.bring_all_notes_to_front()
+        )
+        self.bring_all_notes_to_front_hotkey.grab_failed.connect(
+            lambda: self._on_hotkey_failed("Bring Notes on Top")
+        )
+        self.bring_all_notes_to_front_hotkey.start()
+
+    def _restart_bring_all_notes_to_front_hotkey_listener(self):
+        if self.bring_all_notes_to_front_hotkey is not None:
+            self.bring_all_notes_to_front_hotkey.stop()
+        self._start_bring_all_notes_to_front_hotkey_listener()
+
     # -- persistence -------------------------------------------------------
 
     def _schedule_save(self):
@@ -361,6 +439,12 @@ class NoteManager(QObject):
             self.hotkey.stop()
         if self.notes_browser_hotkey is not None:
             self.notes_browser_hotkey.stop()
+        if self.show_hide_all_notes_hotkey is not None:
+            self.show_hide_all_notes_hotkey.stop()
+        if self.roll_all_notes_hotkey is not None:
+            self.roll_all_notes_hotkey.stop()
+        if self.bring_all_notes_to_front_hotkey is not None:
+            self.bring_all_notes_to_front_hotkey.stop()
         for note_window in self.notes.values():
             note_window._clear_window_watcher()
         self._save_timer.stop()

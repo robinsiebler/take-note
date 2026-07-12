@@ -4,4 +4,5 @@ __pycache__/
 .venv/
 *.egg-info/
 Screenshots/
-test_cases/
+test_cases/bug_screenshots/
+start_testing.fish
