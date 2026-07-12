@@ -139,6 +139,12 @@ class Settings:
     # action, never a fallback/unset-on-disk state.
     hotkey: str | None = DEFAULT_HOTKEY
     notes_browser_hotkey: str | None = DEFAULT_NOTES_BROWSER_HOTKEY
+    # No default combo for these three, unlike the two above — explicit
+    # user call: these are opt-in, left for each user to pick their own
+    # (or not bother), not something a fresh install grabs automatically.
+    show_hide_all_notes_hotkey: str | None = None
+    roll_all_notes_hotkey: str | None = None
+    bring_all_notes_to_front_hotkey: str | None = None
     spell_check_enabled: bool = False
 
     # None until the Notes Browser has actually been moved/resized once —

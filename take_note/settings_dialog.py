@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QKeySequenceEdit,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -46,7 +47,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         layout.addWidget(tabs)
         tabs.addTab(self._build_general_tab(), "General")
-        tabs.addTab(self._build_hotkey_tab(), "Hotkey")
+        tabs.addTab(self._scrollable(self._build_hotkey_tab()), "Hotkey")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -106,6 +107,24 @@ class SettingsDialog(QDialog):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._settings.settings_dialog_w, self._settings.settings_dialog_h = self.width(), self.height()
+
+    @staticmethod
+    def _scrollable(content: QWidget) -> QScrollArea:
+        """Wraps a tab's content in a scroll area rather than letting it
+        size the whole dialog to fit. Without this, QFormLayout sets a
+        hard minimum-size floor from its own content — with five stacked
+        hotkey sections (up from two), that floor grew tall enough to
+        fill both monitors and made the dialog impossible to shrink at
+        all (not just visually cramped — a real resize-below-minimum
+        block, confirmed live). A QScrollArea's own sizeHint/minimumSize
+        don't need to match its contained widget's, so wrapping the tab
+        in one gives the dialog a sane default height and an actual
+        scrollbar for the rest, without touching the tab's own layout."""
+        scroll = QScrollArea()
+        scroll.setWidget(content)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        return scroll
 
     # -- General tab -------------------------------------------------------
 
@@ -251,60 +270,152 @@ class SettingsDialog(QDialog):
         tab = QWidget()
         form = QFormLayout(tab)
 
-        form.addRow(QLabel("Global hotkey to create a new note:"))
-        self.hotkey_edit = QKeySequenceEdit(QKeySequence(self._settings.hotkey or ""))
-        hotkey_row = QHBoxLayout()
-        hotkey_row.addWidget(self.hotkey_edit)
-        self.hotkey_clear_button = QPushButton("Clear")
-        self.hotkey_clear_button.clicked.connect(self.hotkey_edit.clear)
-        hotkey_row.addWidget(self.hotkey_clear_button)
-        form.addRow(hotkey_row)
-
-        test_button = QPushButton("Test")
-        test_button.clicked.connect(self._test_hotkey)
-        form.addRow(test_button)
-
-        self.hotkey_status = QLabel("")
-        form.addRow(self.hotkey_status)
-
-        form.addRow(QLabel(""))  # spacer between the two hotkey sections
-
-        form.addRow(QLabel("Global hotkey to open the Notes Browser:"))
-        self.notes_browser_hotkey_edit = QKeySequenceEdit(
-            QKeySequence(self._settings.notes_browser_hotkey or "")
+        # A combo already grabbed by a system-level shortcut (KWin's own
+        # global shortcuts, in particular) never reaches this dialog at
+        # all — the keypress is intercepted before X11 delivers it to any
+        # app window, so the field below just stays empty and nothing
+        # visibly happens. Reported live: Meta+Alt+R (Spectacle) and
+        # Meta+Alt+S ("Toggle Screen Reader") both do this. No reliable
+        # way to detect every such conflict ahead of time — KDE only
+        # persists a *customized* global shortcut to
+        # ~/.config/kglobalshortcutsrc, not its large set of unmodified
+        # built-in defaults (confirmed directly: Meta+Alt+S was in that
+        # file, Meta+Alt+R wasn't, despite both being live-grabbed) — so
+        # this is a plain explanatory hint, not an automated check.
+        hint_label = QLabel(
+            "If pressing a combo does nothing in a field below, it's "
+            "likely already grabbed by a system shortcut elsewhere — "
+            "check System Settings → Shortcuts."
         )
-        notes_browser_hotkey_row = QHBoxLayout()
-        notes_browser_hotkey_row.addWidget(self.notes_browser_hotkey_edit)
-        self.notes_browser_hotkey_clear_button = QPushButton("Clear")
-        self.notes_browser_hotkey_clear_button.clicked.connect(self.notes_browser_hotkey_edit.clear)
-        notes_browser_hotkey_row.addWidget(self.notes_browser_hotkey_clear_button)
-        form.addRow(notes_browser_hotkey_row)
+        hint_label.setWordWrap(True)
+        hint_label.setStyleSheet("color: #888888;")
+        form.addRow(hint_label)
 
-        notes_browser_test_button = QPushButton("Test")
-        notes_browser_test_button.clicked.connect(self._test_notes_browser_hotkey)
-        form.addRow(notes_browser_test_button)
+        form.addRow(QLabel(""))  # spacer before the first hotkey section
 
-        self.notes_browser_hotkey_status = QLabel("")
-        form.addRow(self.notes_browser_hotkey_status)
+        self.hotkey_edit, self.hotkey_clear_button, hotkey_test_btn, self.hotkey_status = (
+            self._build_hotkey_row(form, "Global hotkey to create a new note:", self._settings.hotkey)
+        )
+        hotkey_test_btn.clicked.connect(self._test_hotkey)
+
+        form.addRow(QLabel(""))  # spacer between hotkey sections
+
+        (
+            self.notes_browser_hotkey_edit,
+            self.notes_browser_hotkey_clear_button,
+            notes_browser_test_btn,
+            self.notes_browser_hotkey_status,
+        ) = self._build_hotkey_row(
+            form, "Global hotkey to open the Notes Browser:", self._settings.notes_browser_hotkey
+        )
+        notes_browser_test_btn.clicked.connect(self._test_notes_browser_hotkey)
+
+        form.addRow(QLabel(""))
+
+        (
+            self.show_hide_all_notes_hotkey_edit,
+            self.show_hide_all_notes_hotkey_clear_button,
+            show_hide_test_btn,
+            self.show_hide_all_notes_hotkey_status,
+        ) = self._build_hotkey_row(
+            form,
+            "Global hotkey to show/hide all notes:",
+            self._settings.show_hide_all_notes_hotkey,
+        )
+        show_hide_test_btn.clicked.connect(self._test_show_hide_all_notes_hotkey)
+
+        form.addRow(QLabel(""))
+
+        (
+            self.roll_all_notes_hotkey_edit,
+            self.roll_all_notes_hotkey_clear_button,
+            roll_test_btn,
+            self.roll_all_notes_hotkey_status,
+        ) = self._build_hotkey_row(
+            form, "Global hotkey to roll up/down all notes:", self._settings.roll_all_notes_hotkey
+        )
+        roll_test_btn.clicked.connect(self._test_roll_all_notes_hotkey)
+
+        form.addRow(QLabel(""))
+
+        (
+            self.bring_all_notes_to_front_hotkey_edit,
+            self.bring_all_notes_to_front_hotkey_clear_button,
+            bring_to_front_test_btn,
+            self.bring_all_notes_to_front_hotkey_status,
+        ) = self._build_hotkey_row(
+            form,
+            "Global hotkey to bring all notes to front:",
+            self._settings.bring_all_notes_to_front_hotkey,
+        )
+        bring_to_front_test_btn.clicked.connect(self._test_bring_all_notes_to_front_hotkey)
 
         return tab
 
+    def _build_hotkey_row(
+        self, form: QFormLayout, label: str, current_value: str | None
+    ) -> tuple[QKeySequenceEdit, QPushButton, QPushButton, QLabel]:
+        """One hotkey's field + inline Clear button + Test button + status
+        line, matching the layout every hotkey section in this tab uses.
+        Returns the widgets rather than storing them directly, since the
+        caller needs to keep the existing self.hotkey_edit/
+        self.notes_browser_hotkey_edit/etc. attribute names other code
+        (and tests) already reference by name."""
+        form.addRow(QLabel(label))
+        edit = QKeySequenceEdit(QKeySequence(current_value or ""))
+        row = QHBoxLayout()
+        row.addWidget(edit)
+        clear_button = QPushButton("Clear")
+        clear_button.clicked.connect(edit.clear)
+        row.addWidget(clear_button)
+        form.addRow(row)
+
+        test_button = QPushButton("Test")
+        form.addRow(test_button)
+
+        status = QLabel("")
+        form.addRow(status)
+
+        return edit, clear_button, test_button, status
+
+    def _all_hotkey_edits(self) -> list[tuple[QKeySequenceEdit, str]]:
+        return [
+            (self.hotkey_edit, "New Note"),
+            (self.notes_browser_hotkey_edit, "Notes Browser"),
+            (self.show_hide_all_notes_hotkey_edit, "Show/Hide All Notes"),
+            (self.roll_all_notes_hotkey_edit, "Roll Up/Down Notes"),
+            (self.bring_all_notes_to_front_hotkey_edit, "Bring Notes on Top"),
+        ]
+
     def _test_hotkey(self):
-        self._test_hotkey_combo(
-            self.hotkey_edit,
-            self.hotkey_status,
-            self._settings.hotkey,
-            self.notes_browser_hotkey_edit,
-            "Notes Browser",
-        )
+        self._test_hotkey_combo(self.hotkey_edit, self.hotkey_status, self._settings.hotkey)
 
     def _test_notes_browser_hotkey(self):
         self._test_hotkey_combo(
             self.notes_browser_hotkey_edit,
             self.notes_browser_hotkey_status,
             self._settings.notes_browser_hotkey,
-            self.hotkey_edit,
-            "New Note",
+        )
+
+    def _test_show_hide_all_notes_hotkey(self):
+        self._test_hotkey_combo(
+            self.show_hide_all_notes_hotkey_edit,
+            self.show_hide_all_notes_hotkey_status,
+            self._settings.show_hide_all_notes_hotkey,
+        )
+
+    def _test_roll_all_notes_hotkey(self):
+        self._test_hotkey_combo(
+            self.roll_all_notes_hotkey_edit,
+            self.roll_all_notes_hotkey_status,
+            self._settings.roll_all_notes_hotkey,
+        )
+
+    def _test_bring_all_notes_to_front_hotkey(self):
+        self._test_hotkey_combo(
+            self.bring_all_notes_to_front_hotkey_edit,
+            self.bring_all_notes_to_front_hotkey_status,
+            self._settings.bring_all_notes_to_front_hotkey,
         )
 
     def _test_hotkey_combo(
@@ -312,8 +423,6 @@ class SettingsDialog(QDialog):
         edit: QKeySequenceEdit,
         status: QLabel,
         current_value: str | None,
-        other_edit: QKeySequenceEdit,
-        other_label: str,
     ):
         sequence = edit.keySequence().toString()
         if not sequence:
@@ -340,22 +449,28 @@ class SettingsDialog(QDialog):
             self._stop_test_listener()
             return
 
-        # Same idea, but against the *other* hotkey field in this same
+        # Same idea, but against every *other* hotkey field in this same
         # dialog rather than this field's own current value — covers both
-        # "matches the other hotkey's already-committed combo" (which
+        # "matches another hotkey's already-committed combo" (which
         # NoteManager also still holds live while this dialog is open)
-        # and "matches what you just typed into the other field but
+        # and "matches what you just typed into another field but
         # haven't tested/saved yet" in one comparison, since either way
-        # this is what the other field's widget shows right now.
-        other_sequence = other_edit.keySequence().toString()
-        if other_sequence:
+        # this is what that field's widget shows right now. Five hotkeys
+        # now share one combo space, so this checks all of them, not just
+        # a single hardcoded "other" field.
+        for other_edit, other_label in self._all_hotkey_edits():
+            if other_edit is edit:
+                continue
+            other_sequence = other_edit.keySequence().toString()
+            if not other_sequence:
+                continue
             try:
                 if (key, modifiers) == parse_shortcut(other_sequence):
                     status.setText(f"Same as the {other_label} hotkey — pick a different combination")
                     self._stop_test_listener()
                     return
             except ValueError:
-                pass  # the other field's own invalid state isn't this check's concern
+                continue  # the other field's own invalid state isn't this check's concern
 
         status.setText("Testing…")
         self._stop_test_listener()
@@ -398,6 +513,13 @@ class SettingsDialog(QDialog):
             # anything other than "leave the old combo alone".
             hotkey=self.hotkey_edit.keySequence().toString() or None,
             notes_browser_hotkey=self.notes_browser_hotkey_edit.keySequence().toString() or None,
+            show_hide_all_notes_hotkey=(
+                self.show_hide_all_notes_hotkey_edit.keySequence().toString() or None
+            ),
+            roll_all_notes_hotkey=self.roll_all_notes_hotkey_edit.keySequence().toString() or None,
+            bring_all_notes_to_front_hotkey=(
+                self.bring_all_notes_to_front_hotkey_edit.keySequence().toString() or None
+            ),
             spell_check_enabled=self.spell_check_check.isChecked(),
             # No UI for these (yet) — carry them through unchanged rather
             # than silently resetting them to their dataclass defaults,

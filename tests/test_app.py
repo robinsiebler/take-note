@@ -451,7 +451,7 @@ def test_apply_settings_restarts_only_the_notes_browser_hotkey_when_only_it_chan
     manager._restart_notes_browser_hotkey_listener.assert_called_once()
 
 
-def test_on_about_to_quit_stops_both_hotkey_listeners():
+def test_on_about_to_quit_stops_all_five_hotkey_listeners():
     manager = Mock()
     manager.notes = {}
 
@@ -459,3 +459,178 @@ def test_on_about_to_quit_stops_both_hotkey_listeners():
 
     manager.hotkey.stop.assert_called_once()
     manager.notes_browser_hotkey.stop.assert_called_once()
+    manager.show_hide_all_notes_hotkey.stop.assert_called_once()
+    manager.roll_all_notes_hotkey.stop.assert_called_once()
+    manager.bring_all_notes_to_front_hotkey.stop.assert_called_once()
+
+
+def test_start_show_hide_all_notes_hotkey_listener_uses_the_configured_combo(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(show_hide_all_notes_hotkey="Meta+Alt+H")
+
+    NoteManager._start_show_hide_all_notes_hotkey_listener(manager)
+
+    listener = _FakeHotkeyListener.instances[0]
+    assert (listener.key, listener.modifiers) == ("H", ("meta", "mod1"))
+    assert listener.started
+    assert manager.show_hide_all_notes_hotkey is listener
+
+
+def test_show_hide_all_notes_hotkey_triggered_calls_toggle_show_all_notes(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(show_hide_all_notes_hotkey="Meta+Alt+H")
+
+    NoteManager._start_show_hide_all_notes_hotkey_listener(manager)
+
+    triggered_callback = _FakeHotkeyListener.instances[0].triggered.connect.call_args[0][0]
+    triggered_callback()
+
+    manager.toggle_show_all_notes.assert_called_once()
+
+
+def test_restart_show_hide_all_notes_hotkey_listener_stops_the_old_one(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(show_hide_all_notes_hotkey="Meta+Alt+H")
+    manager._start_show_hide_all_notes_hotkey_listener = (
+        lambda: NoteManager._start_show_hide_all_notes_hotkey_listener(manager)
+    )
+    old_listener = Mock()
+    manager.show_hide_all_notes_hotkey = old_listener
+
+    NoteManager._restart_show_hide_all_notes_hotkey_listener(manager)
+
+    old_listener.stop.assert_called_once()
+    assert manager.show_hide_all_notes_hotkey is _FakeHotkeyListener.instances[0]
+
+
+def test_start_roll_all_notes_hotkey_listener_uses_the_configured_combo(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(roll_all_notes_hotkey="Meta+Alt+R")
+
+    NoteManager._start_roll_all_notes_hotkey_listener(manager)
+
+    listener = _FakeHotkeyListener.instances[0]
+    assert (listener.key, listener.modifiers) == ("R", ("meta", "mod1"))
+    assert listener.started
+    assert manager.roll_all_notes_hotkey is listener
+
+
+def test_roll_all_notes_hotkey_triggered_calls_toggle_roll_all_notes(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(roll_all_notes_hotkey="Meta+Alt+R")
+
+    NoteManager._start_roll_all_notes_hotkey_listener(manager)
+
+    triggered_callback = _FakeHotkeyListener.instances[0].triggered.connect.call_args[0][0]
+    triggered_callback()
+
+    manager.toggle_roll_all_notes.assert_called_once()
+
+
+def test_restart_roll_all_notes_hotkey_listener_stops_the_old_one(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(roll_all_notes_hotkey="Meta+Alt+R")
+    manager._start_roll_all_notes_hotkey_listener = (
+        lambda: NoteManager._start_roll_all_notes_hotkey_listener(manager)
+    )
+    old_listener = Mock()
+    manager.roll_all_notes_hotkey = old_listener
+
+    NoteManager._restart_roll_all_notes_hotkey_listener(manager)
+
+    old_listener.stop.assert_called_once()
+    assert manager.roll_all_notes_hotkey is _FakeHotkeyListener.instances[0]
+
+
+def test_start_bring_all_notes_to_front_hotkey_listener_uses_the_configured_combo(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(bring_all_notes_to_front_hotkey="Meta+Alt+T")
+
+    NoteManager._start_bring_all_notes_to_front_hotkey_listener(manager)
+
+    listener = _FakeHotkeyListener.instances[0]
+    assert (listener.key, listener.modifiers) == ("T", ("meta", "mod1"))
+    assert listener.started
+    assert manager.bring_all_notes_to_front_hotkey is listener
+
+
+def test_bring_all_notes_to_front_hotkey_triggered_calls_bring_all_notes_to_front(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(bring_all_notes_to_front_hotkey="Meta+Alt+T")
+
+    NoteManager._start_bring_all_notes_to_front_hotkey_listener(manager)
+
+    triggered_callback = _FakeHotkeyListener.instances[0].triggered.connect.call_args[0][0]
+    triggered_callback()
+
+    manager.bring_all_notes_to_front.assert_called_once()
+
+
+def test_restart_bring_all_notes_to_front_hotkey_listener_stops_the_old_one(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(bring_all_notes_to_front_hotkey="Meta+Alt+T")
+    manager._start_bring_all_notes_to_front_hotkey_listener = (
+        lambda: NoteManager._start_bring_all_notes_to_front_hotkey_listener(manager)
+    )
+    old_listener = Mock()
+    manager.bring_all_notes_to_front_hotkey = old_listener
+
+    NoteManager._restart_bring_all_notes_to_front_hotkey_listener(manager)
+
+    old_listener.stop.assert_called_once()
+    assert manager.bring_all_notes_to_front_hotkey is _FakeHotkeyListener.instances[0]
+
+
+def test_start_new_bulk_action_hotkey_listeners_skip_grabbing_when_cleared(monkeypatch):
+    """All three default to None (see Settings.show_hide_all_notes_hotkey
+    etc.'s own docstring — explicit user call, no default combo unlike
+    the two hotkeys above), so a fresh install must never attempt a grab
+    for any of them."""
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings()
+
+    NoteManager._start_show_hide_all_notes_hotkey_listener(manager)
+    NoteManager._start_roll_all_notes_hotkey_listener(manager)
+    NoteManager._start_bring_all_notes_to_front_hotkey_listener(manager)
+
+    assert _FakeHotkeyListener.instances == []
+    assert manager.show_hide_all_notes_hotkey is None
+    assert manager.roll_all_notes_hotkey is None
+    assert manager.bring_all_notes_to_front_hotkey is None
+
+
+def test_apply_settings_restarts_only_the_changed_bulk_action_hotkey(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(
+        Settings(roll_all_notes_hotkey="Meta+Alt+R", bring_all_notes_to_front_hotkey="Meta+Alt+T")
+    )
+
+    NoteManager._apply_settings(
+        manager,
+        Settings(roll_all_notes_hotkey="Meta+Alt+X", bring_all_notes_to_front_hotkey="Meta+Alt+T"),
+    )
+
+    manager._restart_roll_all_notes_hotkey_listener.assert_called_once()
+    manager._restart_show_hide_all_notes_hotkey_listener.assert_not_called()
+    manager._restart_bring_all_notes_to_front_hotkey_listener.assert_not_called()
