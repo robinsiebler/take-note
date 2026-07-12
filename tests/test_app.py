@@ -217,6 +217,30 @@ def test_create_note_on_a_board_does_not_apply_the_cascade_offset(qapp):
     assert manager._new_note_cascade_offset == 24  # unchanged
 
 
+def test_load_from_disk_seeds_cascade_offset_from_standalone_note_count(qapp, monkeypatch):
+    """Regression, reported live: the cascade offset always started at 0
+    on every launch, so the very first standalone note created right
+    after a relaunch landed at the exact same fixed default position
+    (100, 100) as whatever old note was already sitting there -- reading
+    as "staggering doesn't work" even though it works fine for notes
+    created within the same session. Seeding from how many standalone
+    notes are already on disk means a relaunch picks the cascade back up
+    roughly where it left off, board-attached notes excluded since they
+    don't use this offset at all (see
+    test_create_note_on_a_board_does_not_apply_the_cascade_offset)."""
+    from take_note.models import Board
+
+    notes = [Note(), Note(), Note(board_id="b1")]
+    boards = [Board(id="b1")]
+    settings = Settings()
+    monkeypatch.setattr(app_module.storage, "load_all", lambda: (notes, boards, settings))
+    manager = _fake_manager_for_create_note(settings)
+
+    NoteManager.load_from_disk(manager)
+
+    assert manager._new_note_cascade_offset == app_module.CASCADE_OFFSET * 2
+
+
 def _fake_manager_for_apply_settings(settings) -> Mock:
     manager = Mock()
     manager.settings = settings

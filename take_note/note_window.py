@@ -4,7 +4,7 @@ import base64
 import re
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, QSize, QUrl, Qt, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QRectF, QSize, QUrl, Qt, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -34,6 +34,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSizeGrip,
+    QSizePolicy,
+    QSpacerItem,
     QTextEdit,
     QToolButton,
     QToolTip,
@@ -181,6 +183,31 @@ def lock_icon(locked: bool, size: int = 18) -> QIcon:
 
     painter.end()
     return QIcon(pixmap)
+
+
+def _dark_clear_icon(size: int = 16) -> QIcon:
+    """QLineEdit.setClearButtonEnabled(True) draws the platform's native
+    clear icon, which on this desktop's icon theme is light-colored —
+    fine against every other text field in the app (all sit on the
+    system's own, usually-dark, palette), but reported live as
+    invisible on NoteFindBar's field, whose background FIND_BAR_QSS
+    hard-codes to white regardless of theme (see that docstring). A
+    fixed dark icon here matches that fixed light background the same
+    way FIND_BAR_QSS's own dark text/button colors already do."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor("#202020"))
+    pen.setWidthF(size * 0.14)
+    pen.setCapStyle(Qt.RoundCap)
+    painter.setPen(pen)
+    margin = size * 0.28
+    painter.drawLine(QPointF(margin, margin), QPointF(size - margin, size - margin))
+    painter.drawLine(QPointF(size - margin, margin), QPointF(margin, size - margin))
+    painter.end()
+    return QIcon(pixmap)
+
 
 # Cascades to every QToolButton inside whatever container this is mixed
 # into, so icons stay legible regardless of the app/system theme instead
@@ -575,7 +602,16 @@ class NoteFindBar(QWidget):
 
         self.field = _FindLineEdit()
         self.field.setPlaceholderText("Find…")
-        self.field.setClearButtonEnabled(True)
+        # Not setClearButtonEnabled(True): its native icon is invisible
+        # here (see _dark_clear_icon's docstring) — a manual action with
+        # a fixed-dark icon instead, shown only once there's text to
+        # clear, matching the native button's own behavior.
+        clear_action = QAction(_dark_clear_icon(), "", self.field)
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.field.clear)
+        clear_action.setVisible(False)
+        self.field.addAction(clear_action, QLineEdit.ActionPosition.TrailingPosition)
+        self.field.textChanged.connect(lambda text: clear_action.setVisible(bool(text)))
         self.field.textChanged.connect(self._find_from_start)
         self.field.returnPressed.connect(self.find_next)
         self.field.escapePressed.connect(self.close_bar)
@@ -2336,6 +2372,18 @@ class NoteWindow(QWidget):
         box.setText("Delete this note permanently?")
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         box.setWindowFlags(box.windowFlags() | Qt.WindowStaysOnTopHint)
+        # QMessageBox's own auto-sizing left this cramped — reported live,
+        # see screenshot. Its layout enforces SetFixedSize: confirmed
+        # directly that resize()/setMinimumWidth() calls afterward are
+        # silently ignored, even when sizeHint() itself reports a wider
+        # value. The standard Qt workaround (used widely for exactly this
+        # QMessageBox limitation): drop an invisible, expanding spacer
+        # into its own grid layout, which the SetFixedSize recompute does
+        # respect since it's genuine layout content, not a bolted-on
+        # resize.
+        layout = box.layout()
+        spacer = QSpacerItem(420, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        layout.addItem(spacer, layout.rowCount(), 0, 1, layout.columnCount())
         self._center_dialog_over_note(box)
         reply = box.exec()
         if reply == QMessageBox.Yes:

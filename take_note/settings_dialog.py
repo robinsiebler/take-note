@@ -39,6 +39,9 @@ class SettingsDialog(QDialog):
         self._pending_color = settings.default_color
         self._pending_font_color = settings.default_font_color
         self._test_listener: HotkeyListener | None = None
+        # Captured before _restore_geometry()/resizeEvent() can write
+        # anything into self._settings — see showEvent() below.
+        self._had_saved_geometry = bool(settings.settings_dialog_w and settings.settings_dialog_h)
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -67,6 +70,23 @@ class SettingsDialog(QDialog):
             self.resize(self._settings.settings_dialog_w, self._settings.settings_dialog_h)
         if self._settings.settings_dialog_x is not None and self._settings.settings_dialog_y is not None:
             self.move(self._settings.settings_dialog_x, self._settings.settings_dialog_y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # No saved geometry (first ever run, or a fresh Settings) — Qt's
+        # own default first-show size here is noticeably smaller than
+        # sizeHint() (confirmed directly, e.g. 426x637 vs. a true
+        # 695x666), clipping content at the bottom rather than growing
+        # to fit it. Deliberately done here, not in _restore_geometry()
+        # (called from __init__, before the dialog is ever shown/laid
+        # out): reported live that resizing that early produced a
+        # visually broken dialog (clipped color swatch grids, stray
+        # unpainted regions) on the real desktop, where actual fonts/DPI
+        # scaling can make sizeHint() computed before first paint
+        # unreliable. Guarded to only ever fire once.
+        if not self._had_saved_geometry:
+            self._had_saved_geometry = True
+            self.resize(self.sizeHint())
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -128,6 +148,13 @@ class SettingsDialog(QDialog):
             # checkbox itself is the only place this gets toggled.
             self.spell_check_check.setChecked(False)
             self.spell_check_check.setEnabled(False)
+            # setEnabled(False) alone reuses Qt's disabled-text palette
+            # role, which the label below already proved too low-contrast
+            # to read comfortably (see that comment) — same fixed grey
+            # here, so the checkbox and its explanation read as one
+            # visually consistent disabled unit rather than two different
+            # shades of muted.
+            self.spell_check_check.setStyleSheet("color: #888888;")
             # A tooltip alone isn't a reliable way to explain why a
             # control is disabled — reported live: hard to trigger, and
             # nothing hints one exists. Visible text under the checkbox
@@ -137,25 +164,31 @@ class SettingsDialog(QDialog):
                 "spell-check dictionary — see README."
             )
             unavailable_label.setWordWrap(True)
-            # This dialog has no custom stylesheet anywhere else — every
-            # other label just inherits the ambient system palette, which
-            # is exactly why the rest of it already adapts correctly to
-            # light/dark themes. A hardcoded color here would break that:
-            # a first attempt at a fixed dark-theme-tuned grey read fine
-            # against this app's own dark theme but was too light to read
-            # against a light one (confirmed via a live screenshot under
-            # each), and the reverse would happen with a light-tuned one.
-            # setEnabled(False) instead reuses Qt's own disabled-text
-            # palette role — the same mechanism already graying out the
-            # checkbox right above it — which resolves to an
-            # appropriately-contrasted grey under either theme
-            # automatically, no hardcoded value needed at all.
-            unavailable_label.setEnabled(False)
-            # Font size only here, deliberately no color property — a
-            # color set via stylesheet would override the palette-driven
-            # one setEnabled(False) just established above.
-            unavailable_label.setStyleSheet("font-size: 11px;")
-            form.addRow("", unavailable_label)
+            # Two prior approaches both failed real screenshot checks,
+            # reported live each time: a first fixed dark-tuned grey read
+            # fine on dark but too light on light theme; switching to
+            # setEnabled(False) (Qt's own disabled-text palette role, the
+            # same mechanism graying out the checkbox above it) was
+            # assumed theme-correct but turned out too low-contrast to
+            # read on *either* theme in practice — disabled-text roles
+            # are deliberately muted for de-emphasis, not tuned for
+            # legibility of text that must actually be read. A fixed
+            # medium grey instead: roughly equidistant from both a
+            # near-black and a near-white background, so it reads
+            # clearly on both without needing to special-case per theme.
+            # Confirmed via rendered mockups on both before landing here.
+            # No font-size override — reported live as way too small
+            # next to every other label in this dialog; just inherit the
+            # same size as the rest, only the color is different.
+            unavailable_label.setStyleSheet("color: #888888;")
+            # addRow(label) (not addRow("", label)) — the two-argument
+            # form put it in the value column, indented to the right of
+            # an empty label column instead of starting flush left under
+            # "Check spelling..." above it, reported live as looking
+            # wrong. A single-argument row spans the widget across both
+            # columns instead, same as the "Default note/font color:"
+            # section headers above.
+            form.addRow(unavailable_label)
 
         return tab
 
