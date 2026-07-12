@@ -65,6 +65,15 @@ class SettingsDialog(QDialog):
         # the user is choosing to discard.
         if self._settings.settings_dialog_w and self._settings.settings_dialog_h:
             self.resize(self._settings.settings_dialog_w, self._settings.settings_dialog_h)
+        else:
+            # No saved geometry (first ever run, or a fresh Settings) —
+            # confirmed directly that Qt's own default first-show size
+            # here is noticeably smaller than sizeHint() (e.g. 426x637
+            # vs. a true 695x666), clipping content at the bottom rather
+            # than growing to fit it. Only matters once content is tall
+            # enough to hit that gap, which is exactly what exposed it:
+            # the spell-check-unavailable label below wrapped to 3 lines.
+            self.resize(self.sizeHint())
         if self._settings.settings_dialog_x is not None and self._settings.settings_dialog_y is not None:
             self.move(self._settings.settings_dialog_x, self._settings.settings_dialog_y)
 
@@ -150,7 +159,10 @@ class SettingsDialog(QDialog):
             # near-black and a near-white background, so it reads
             # clearly on both without needing to special-case per theme.
             # Confirmed via rendered mockups on both before landing here.
-            unavailable_label.setStyleSheet("font-size: 11px; color: #888888;")
+            # No font-size override — reported live as way too small
+            # next to every other label in this dialog; just inherit the
+            # same size as the rest, only the color is different.
+            unavailable_label.setStyleSheet("color: #888888;")
             form.addRow("", unavailable_label)
 
         return tab
