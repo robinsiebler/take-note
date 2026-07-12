@@ -1190,6 +1190,48 @@ def test_show_tags_dialog_cancelled_does_not_change_tags(qapp, monkeypatch):
     assert win.note.tags == ["work"]
 
 
+def test_header_tag_indicator_hidden_for_untagged_note(qapp):
+    win = make_note_window("Some text")
+
+    assert not win.header.tag_btn.isVisible()
+
+
+def test_header_tag_indicator_shown_for_tagged_note(qapp):
+    win = NoteWindow(Note(tags=["work"]), manager=FakeManager())
+
+    assert win.header.tag_btn.isVisible()
+
+
+def test_header_tag_indicator_updates_after_saving_tags(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_title_dialog(monkeypatch, "work, urgent", True)
+
+    win.show_tags_dialog()
+
+    assert win.header.tag_btn.isVisible()
+    assert "work" in win.header.tag_btn.toolTip()
+    assert "urgent" in win.header.tag_btn.toolTip()
+
+
+def test_header_tag_indicator_hides_after_clearing_tags(qapp, monkeypatch):
+    win = NoteWindow(Note(tags=["work"]), manager=FakeManager())
+    _patch_title_dialog(monkeypatch, "", True)
+
+    win.show_tags_dialog()
+
+    assert not win.header.tag_btn.isVisible()
+
+
+def test_clicking_tag_indicator_opens_tags_dialog(qapp, monkeypatch):
+    win = NoteWindow(Note(tags=["work"]), manager=FakeManager())
+    called = []
+    monkeypatch.setattr(win, "show_tags_dialog", lambda: called.append(True))
+
+    win.header.tag_btn.click()
+
+    assert called == [True]
+
+
 def test_title_and_hyperlink_dialogs_have_a_clear_button(qapp, monkeypatch):
     """Both go through the shared _new_note_dialog() helper, so one test
     covers both — matches the clear button the Notes Browser's search
