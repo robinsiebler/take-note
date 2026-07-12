@@ -136,3 +136,7 @@ editing mode.
 
 See [docs/PLAN.MD](docs/PLAN.MD) for the original pre-implementation design
 plan (historical reference; some details evolved during implementation).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
