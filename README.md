@@ -31,6 +31,16 @@ isolated venv, and the `take-note` command lands in `~/.local/bin`,
 which is on `PATH` by default on most distros. PySide6 ships prebuilt
 wheels for this, so nothing needs to be compiled.
 
+### Upgrading
+
+```bash
+pip install --user --upgrade git+https://github.com/robinsiebler/take-note.git
+```
+
+Since this points at a git URL rather than a plain package name, pip
+actually re-fetches and reinstalls even without `--upgrade` — but pass
+it anyway to make the intent explicit rather than relying on that.
+
 ### Developing (from a clone)
 
 ```bash
