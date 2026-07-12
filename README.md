@@ -6,7 +6,7 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 
 Colored, resizable sticky notes with rich text (fonts, colors, bullets &
 numbering, hyperlinks, embedded images), a global new-note hotkey, a
-searchable Notes Browser with free-form tags, Notepads (shared
+searchable Notes Manager with free-form tags, Notepads (shared
 corkboards), Lock Note, in-note Find, optional spell check, and a
 system tray for quick actions.
 
@@ -130,7 +130,7 @@ Features above rather than re-deriving it from history here.
   rounded; the swatch layout/background styling itself is still an open
   design question
 - Configurable hotkeys for in-app actions (Bold/Italic/Add Title etc.) —
-  currently only the five global hotkeys (new note, open Notes Browser,
+  currently only the five global hotkeys (new note, open Notes Manager,
   show/hide all, roll up/down all, bring all to front) are
   user-configurable
 - The Notepad corkboard window's own chrome is still visually plain

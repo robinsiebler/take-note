@@ -2473,7 +2473,7 @@ class NoteWindow(QWidget):
         # Session-only, like the tray's bulk Show All/Hide All Notes — a
         # hidden note reappears on the next launch rather than staying
         # hidden unexpectedly. To bring one specific note back without
-        # reopening every note: the Notes Browser lists every note
+        # reopening every note: the Notes Manager lists every note
         # regardless of window visibility, and double-clicking a row
         # already calls .show() before .raise_()/.activateWindow(), so
         # it already works as the "bring it back" mechanism with no

@@ -723,7 +723,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
 
 def test_hide_note_action_hides_the_window(qapp):
     """Session-only, like the tray's bulk Show All/Hide All Notes — no
-    persisted field, just a plain widget hide(). The Notes Browser
+    persisted field, just a plain widget hide(). The Notes Manager
     already lists every note regardless of window visibility and its
     double-click handler already calls show() first, so it doubles as
     the "bring a hidden note back" mechanism with no changes needed
@@ -1260,7 +1260,7 @@ def test_clicking_tag_indicator_opens_tags_dialog(qapp, monkeypatch):
 
 def test_title_and_hyperlink_dialogs_have_a_clear_button(qapp, monkeypatch):
     """Both go through the shared _new_note_dialog() helper, so one test
-    covers both — matches the clear button the Notes Browser's search
+    covers both — matches the clear button the Notes Manager's search
     field already has (QLineEdit.setClearButtonEnabled(True))."""
     win = make_note_window("Some text")
     seen = {}

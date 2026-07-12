@@ -66,7 +66,7 @@ class _DateTableWidgetItem(QTableWidgetItem):
         return super().__lt__(other)
 
 
-class NotesBrowserWindow(QWidget):
+class NotesManagerWindow(QWidget):
     """A tree of Notepad boards + a sortable, searchable list of every
     note, so a note pinned to some board (or just left on the desktop)
     can actually be found again. Deliberately plain, natively-decorated
@@ -76,15 +76,15 @@ class NotesBrowserWindow(QWidget):
     def __init__(self, manager):
         super().__init__(None)
         self.manager = manager
-        # Not "Take Note! — Notes Browser" — every other window in this
+        # Not "Take Note! — Notes Manager" — every other window in this
         # app (Settings, Stick to Window, Delete Note, ...) just sets its
         # own plain descriptive title and lets the OS/WM append " — Take
         # Note!" automatically (same behavior already confirmed for
         # dialog titles when sizing them). This was the one outlier still
         # including the app name itself, rendering as a visibly
-        # duplicated "Take Note! — Notes Browser — Take Note!" title bar
+        # duplicated "Take Note! — Notes Manager — Take Note!" title bar
         # — caught via a live screenshot from test case 8.8.
-        self.setWindowTitle("Notes Browser")
+        self.setWindowTitle("Notes Manager")
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -102,7 +102,7 @@ class NotesBrowserWindow(QWidget):
         # the window Plasma's Task Manager mislabeled with an unrelated
         # app's icon (a real, upstream-confirmed KDE bug, not fixable from
         # here). With a dedicated global hotkey to reopen it (see
-        # NoteManager._start_notes_browser_hotkey_listener), there's no
+        # NoteManager._start_notes_manager_hotkey_listener), there's no
         # remaining need for taskbar/Alt-Tab reachability, so hiding it
         # removes the only window Plasma had left to mislabel.
         set_skip_taskbar(int(self.winId()), True)
