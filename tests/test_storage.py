@@ -35,6 +35,17 @@ def test_save_and_load_roundtrip_nondefault_opacity_and_rolled_up(tmp_path):
     assert loaded_notes[0].rolled_up is True
 
 
+def test_save_and_load_roundtrip_with_tags(tmp_path):
+    path = tmp_path / "notes.json"
+    note = Note(id="note-1", tags=["work", "urgent"])
+
+    storage.save_all([note], [], Settings(), path=path)
+    loaded_notes, _, _ = storage.load_all(path=path)
+
+    assert loaded_notes == [note]
+    assert loaded_notes[0].tags == ["work", "urgent"]
+
+
 def test_load_missing_file_returns_empty(tmp_path):
     notes, boards, settings = storage.load_all(path=tmp_path / "nope.json")
     assert notes == []

@@ -26,6 +26,7 @@ REFRESH_DEBOUNCE_MS = 500
 
 ALL_NOTES = "__all__"
 UNFILED = "__unfiled__"
+TAG_PREFIX = "tag:"
 
 
 def _format_modified(iso_timestamp: str) -> str:
@@ -154,8 +155,8 @@ class NotesBrowserWindow(QWidget):
         toolbar.addStretch()
         right_layout.addLayout(toolbar)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Title", "Preview", "Notepad", "Date Modified"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Title", "Preview", "Notepad", "Date Modified", "Tags"])
         # Sorting must be enabled before sectionSizeHint() is read below —
         # the hint only reserves room for the sort-indicator arrow once
         # the header actually shows one, so computing it before this line
@@ -186,6 +187,7 @@ class NotesBrowserWindow(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -226,6 +228,27 @@ class NotesBrowserWindow(QWidget):
             if board_window.board.id == selected_id:
                 restored_selection = board_item
 
+        # Computed fresh from live note data every refresh rather than a
+        # separate tag registry — a tag exists implicitly as long as at
+        # least one note still uses it, and disappears from here the
+        # moment none do, matching the fully-free-form vocabulary
+        # decision (no predefined/managed tag list).
+        all_tags = sorted({tag for nw in self.manager.notes.values() for tag in nw.note.tags})
+        if all_tags:
+            tags_item = QTreeWidgetItem(["Tags"])
+            # Not selectable — it has no natural "show notes with any
+            # tag" filtering meaning of its own, only its children do.
+            tags_item.setFlags(tags_item.flags() & ~Qt.ItemIsSelectable)
+            self.tree.addTopLevelItem(tags_item)
+            for tag in all_tags:
+                tag_item = QTreeWidgetItem([tag])
+                tag_data = TAG_PREFIX + tag
+                tag_item.setData(0, Qt.UserRole, tag_data)
+                tags_item.addChild(tag_item)
+                if tag_data == selected_id:
+                    restored_selection = tag_item
+            tags_item.setExpanded(True)
+
         if restored_selection is not None:
             self.tree.setCurrentItem(restored_selection)
         elif selected_id == UNFILED:
@@ -249,6 +272,9 @@ class NotesBrowserWindow(QWidget):
             return notes
         if board_filter == UNFILED:
             return [nw for nw in notes if nw.note.board_id is None]
+        if isinstance(board_filter, str) and board_filter.startswith(TAG_PREFIX):
+            tag = board_filter[len(TAG_PREFIX):]
+            return [nw for nw in notes if tag in nw.note.tags]
         return [nw for nw in notes if nw.note.board_id == board_filter]
 
     def _apply_filter(self):
@@ -267,6 +293,7 @@ class NotesBrowserWindow(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(self._preview_text(note_window)))
             self.table.setItem(row, 2, QTableWidgetItem(self._board_name(note)))
             self.table.setItem(row, 3, _DateTableWidgetItem(note.modified_at))
+            self.table.setItem(row, 4, QTableWidgetItem(", ".join(note.tags)))
         self.table.setSortingEnabled(True)
 
     @staticmethod
