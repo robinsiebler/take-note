@@ -2401,6 +2401,15 @@ class NoteWindow(QWidget):
         layout = box.layout()
         spacer = QSpacerItem(420, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
         layout.addItem(spacer, layout.rowCount(), 0, 1, layout.columnCount())
+        # adjustSize() forces the SetFixedSize layout to actually compute
+        # its real, widened dimensions synchronously — without this,
+        # _center_dialog_over_note() below reads the box's stale
+        # pre-layout rect() (confirmed directly: reported a size wildly
+        # different from the real one), centering on the wrong size and
+        # landing the dialog far from the note once it actually resizes
+        # at exec() time (reported live: dialog appeared near the top of
+        # the screen instead of over the note).
+        box.adjustSize()
         self._center_dialog_over_note(box)
         reply = box.exec()
         if reply == QMessageBox.Yes:
