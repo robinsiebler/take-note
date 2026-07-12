@@ -39,6 +39,9 @@ class SettingsDialog(QDialog):
         self._pending_color = settings.default_color
         self._pending_font_color = settings.default_font_color
         self._test_listener: HotkeyListener | None = None
+        # Captured before _restore_geometry()/resizeEvent() can write
+        # anything into self._settings — see showEvent() below.
+        self._had_saved_geometry = bool(settings.settings_dialog_w and settings.settings_dialog_h)
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -65,17 +68,25 @@ class SettingsDialog(QDialog):
         # the user is choosing to discard.
         if self._settings.settings_dialog_w and self._settings.settings_dialog_h:
             self.resize(self._settings.settings_dialog_w, self._settings.settings_dialog_h)
-        else:
-            # No saved geometry (first ever run, or a fresh Settings) —
-            # confirmed directly that Qt's own default first-show size
-            # here is noticeably smaller than sizeHint() (e.g. 426x637
-            # vs. a true 695x666), clipping content at the bottom rather
-            # than growing to fit it. Only matters once content is tall
-            # enough to hit that gap, which is exactly what exposed it:
-            # the spell-check-unavailable label below wrapped to 3 lines.
-            self.resize(self.sizeHint())
         if self._settings.settings_dialog_x is not None and self._settings.settings_dialog_y is not None:
             self.move(self._settings.settings_dialog_x, self._settings.settings_dialog_y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # No saved geometry (first ever run, or a fresh Settings) — Qt's
+        # own default first-show size here is noticeably smaller than
+        # sizeHint() (confirmed directly, e.g. 426x637 vs. a true
+        # 695x666), clipping content at the bottom rather than growing
+        # to fit it. Deliberately done here, not in _restore_geometry()
+        # (called from __init__, before the dialog is ever shown/laid
+        # out): reported live that resizing that early produced a
+        # visually broken dialog (clipped color swatch grids, stray
+        # unpainted regions) on the real desktop, where actual fonts/DPI
+        # scaling can make sizeHint() computed before first paint
+        # unreliable. Guarded to only ever fire once.
+        if not self._had_saved_geometry:
+            self._had_saved_geometry = True
+            self.resize(self.sizeHint())
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -137,6 +148,13 @@ class SettingsDialog(QDialog):
             # checkbox itself is the only place this gets toggled.
             self.spell_check_check.setChecked(False)
             self.spell_check_check.setEnabled(False)
+            # setEnabled(False) alone reuses Qt's disabled-text palette
+            # role, which the label below already proved too low-contrast
+            # to read comfortably (see that comment) — same fixed grey
+            # here, so the checkbox and its explanation read as one
+            # visually consistent disabled unit rather than two different
+            # shades of muted.
+            self.spell_check_check.setStyleSheet("color: #888888;")
             # A tooltip alone isn't a reliable way to explain why a
             # control is disabled — reported live: hard to trigger, and
             # nothing hints one exists. Visible text under the checkbox
@@ -163,7 +181,14 @@ class SettingsDialog(QDialog):
             # next to every other label in this dialog; just inherit the
             # same size as the rest, only the color is different.
             unavailable_label.setStyleSheet("color: #888888;")
-            form.addRow("", unavailable_label)
+            # addRow(label) (not addRow("", label)) — the two-argument
+            # form put it in the value column, indented to the right of
+            # an empty label column instead of starting flush left under
+            # "Check spelling..." above it, reported live as looking
+            # wrong. A single-argument row spans the widget across both
+            # columns instead, same as the "Default note/font color:"
+            # section headers above.
+            form.addRow(unavailable_label)
 
         return tab
 
