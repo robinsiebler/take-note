@@ -71,6 +71,44 @@ def test_toggle_show_all_notes_shows_when_any_hidden():
     manager.hide_all_notes.assert_not_called()
 
 
+def test_trash_note_sets_deleted_at_hides_and_schedules_save():
+    manager = Mock()
+    note_window = Mock()
+    note_window.note = Note()
+
+    NoteManager.trash_note(manager, note_window)
+
+    assert note_window.note.deleted_at is not None
+    note_window.hide.assert_called_once()
+    manager._schedule_save.assert_called_once()
+
+
+def test_trash_note_does_not_touch_board_id():
+    """The whole point of keeping board_id alone on trash (see
+    Note.deleted_at's own docstring) — a board-attached note stays
+    attached in the data model while trashed, so Restore puts it right
+    back without needing to remember where it came from separately."""
+    manager = Mock()
+    note_window = Mock()
+    note_window.note = Note(board_id="board-1")
+
+    NoteManager.trash_note(manager, note_window)
+
+    assert note_window.note.board_id == "board-1"
+
+
+def test_restore_note_clears_deleted_at_shows_and_schedules_save():
+    manager = Mock()
+    note_window = Mock()
+    note_window.note = Note(deleted_at="2026-01-01T00:00:00+00:00")
+
+    NoteManager.restore_note(manager, note_window)
+
+    assert note_window.note.deleted_at is None
+    note_window.show.assert_called_once()
+    manager._schedule_save.assert_called_once()
+
+
 def test_bring_all_notes_to_front_raises_every_note():
     manager = _fake_manager([False, False])
 

@@ -422,7 +422,7 @@ class NoteHeader(QWidget):
         close_btn = QToolButton()
         close_btn.setText("×")
         close_btn.setAutoRaise(True)
-        close_btn.setToolTip("Delete note")
+        close_btn.setToolTip("Move to Trash")
         close_btn.clicked.connect(note_window.confirm_delete)
         layout.addWidget(close_btn)
 
@@ -915,6 +915,12 @@ class NoteWindow(QWidget):
             self._set_rolled(True, persist=False)
         else:
             self.header.roll_btn.setText("▲")
+        if note.deleted_at is not None:
+            # A trashed note stays a real (loaded, wired-up) NoteWindow —
+            # same reasoning as the session-only "Hide Note" feature, see
+            # NoteManager.trash_note() — just hidden from the moment it's
+            # constructed instead of only when the user hides it live.
+            self.hide()
         # Real user-initiated moves/resizes from here on should still mark
         # the note changed — only the construction-time ones above (and
         # whatever the window manager does while show() is finalizing
@@ -2134,7 +2140,11 @@ class NoteWindow(QWidget):
             self.note.board_id = board.board.id
             if pos is not None:
                 self.move(pos)
-            self.show()
+            # Not a reachable path today (a trashed note's own UI is
+            # hidden, so there's no "Add to Notepad" to click) — guarded
+            # anyway for the same reason as the board=None branch below.
+            if self.note.deleted_at is None:
+                self.show()
             # See _build_ui()'s size_grip comment: wrong resize target and
             # a rendering artifact once this note is no longer top-level.
             self.size_grip.hide()
@@ -2150,7 +2160,13 @@ class NoteWindow(QWidget):
             self._apply_standalone_flags()
             if pos is not None:
                 self.move(pos)
-            self.show()
+            # A trashed note (hidden, not shown again until Restore) must
+            # not pop back on screen just because delete_board()'s
+            # cascade detached it here — board_id still needs clearing
+            # below regardless, so a later Restore doesn't point at a
+            # board that no longer exists.
+            if self.note.deleted_at is None:
+                self.show()
             # Reparenting recreates the native window, same as a fresh
             # construction — reapply both via direct state messages rather
             # than trusting the flags alone (see set_stays_on_top's docstring).
@@ -2465,7 +2481,7 @@ class NoteWindow(QWidget):
         hide_action = menu.addAction("Hide Note")
         hide_action.triggered.connect(self.hide)
 
-        delete_action = menu.addAction("Delete Note")
+        delete_action = menu.addAction("Move to Trash")
         delete_action.triggered.connect(self.confirm_delete)
 
     def confirm_delete(self):
@@ -2479,8 +2495,8 @@ class NoteWindow(QWidget):
         # WindowStaysOnTopHint below (not parent/child stacking) is what
         # actually keeps this above an always-on-top note regardless.
         box = QMessageBox()
-        box.setWindowTitle("Delete Note")
-        box.setText("Delete this note permanently?")
+        box.setWindowTitle("Move to Trash")
+        box.setText("Move this note to Trash?")
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         box.setWindowFlags(box.windowFlags() | Qt.WindowStaysOnTopHint)
         # QMessageBox's own auto-sizing left this cramped — reported live,
@@ -2507,4 +2523,4 @@ class NoteWindow(QWidget):
         self._center_dialog_over_note(box)
         reply = box.exec()
         if reply == QMessageBox.Yes:
-            self.manager.delete_note(self)
+            self.manager.trash_note(self)

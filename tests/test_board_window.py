@@ -73,6 +73,39 @@ def test_canvas_shrinks_back_after_note_moved_back(qapp):
     assert not board.scroll.verticalScrollBar().isVisible()
 
 
+def test_grow_to_fit_ignores_hidden_notes(qapp):
+    """A trashed note (NoteManager.trash_note) or a session-hidden one
+    stays a real child of the canvas the whole time, just not shown —
+    it shouldn't hold the canvas open at its old position."""
+    board = NotepadWindow(Board(), FakeManager())
+    note = NoteWindow(Note(color="#80deea"), FakeManager())
+    note.show()
+    note.attach_to_board(board, pos=QPoint(20, 20))
+    note.move(700, 500)
+    grown = board.canvas.size()
+
+    note.hide()
+    board.canvas.grow_to_fit()
+
+    shrunk = board.canvas.size()
+    assert shrunk.width() < grown.width()
+    assert shrunk.height() < grown.height()
+
+
+def test_detaching_a_trashed_note_does_not_show_it(qapp):
+    board = NotepadWindow(Board(), FakeManager())
+    note = NoteWindow(
+        Note(color="#80deea", deleted_at="2026-01-01T00:00:00+00:00"), FakeManager()
+    )
+    note.attach_to_board(board, pos=QPoint(20, 20))
+    assert note.isHidden()
+
+    note.attach_to_board(None, pos=QPoint(300, 300))
+
+    assert note.isHidden()
+    assert note.note.board_id is None
+
+
 def test_canvas_recomputes_when_board_window_resized(qapp):
     board = NotepadWindow(Board(), FakeManager())
 

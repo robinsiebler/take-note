@@ -33,13 +33,22 @@
   from anywhere (default `Meta+Alt+B`).
 - Notes Browser (tray → "Notes Browser…", or its own global hotkey
   above): a sortable, searchable table of every note (Title/Preview/
-  Notepad/Date Modified/Tags columns) plus a tree of boards and tags to
-  filter by, for finding a note (including a hidden one) without
-  hunting across the desktop. Deliberately excluded from the taskbar,
-  pager, and Alt-Tab switcher — reachable only via the tray or its
-  hotkey — since it was the one Take Note! window a real, unrelated KDE
-  Task Manager bug (confirmed not caused by this app) could mislabel
-  with another app's icon.
+  Notepad/Date Modified/Tags columns) plus a tree of boards, tags, and
+  Trash to filter by, for finding a note (including a hidden one)
+  without hunting across the desktop. Deliberately excluded from the
+  taskbar, pager, and Alt-Tab switcher — reachable only via the tray or
+  its hotkey — since it was the one Take Note! window a real, unrelated
+  KDE Task Manager bug (confirmed not caused by this app) could
+  mislabel with another app's icon.
+- Trash: deleting a note (its × button, hamburger menu, or the Notes
+  Browser) now moves it to Trash instead of deleting it outright —
+  still shows a confirmation, just without the old scarier "permanently"
+  wording. A note's Notepad attachment is remembered while trashed, so
+  restoring one puts it right back where it was; if that Notepad itself
+  gets deleted first, the note just becomes unfiled instead. The Notes
+  Browser's **Trash** node (always present, next to Tags) is the only
+  place to **Restore** a note or **Delete Permanently** — real,
+  irreversible deletion is no longer reachable anywhere else.
 - Tags: free-form, per-note tags (no predefined list) assigned via the
   hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
   Notes Browser, plus a small ribbon icon in the note's own header

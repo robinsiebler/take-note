@@ -46,6 +46,21 @@ def test_save_and_load_roundtrip_with_tags(tmp_path):
     assert loaded_notes[0].tags == ["work", "urgent"]
 
 
+def test_save_and_load_roundtrip_with_deleted_at(tmp_path):
+    """A trashed note's board_id survives the round-trip too, unchanged
+    — Trash is meant to be board-aware (see Note.deleted_at's own
+    docstring), so this pins down that saving/loading never clears it."""
+    path = tmp_path / "notes.json"
+    note = Note(id="note-1", board_id="board-1", deleted_at="2026-01-01T00:00:00+00:00")
+
+    storage.save_all([note], [], Settings(), path=path)
+    loaded_notes, _, _ = storage.load_all(path=path)
+
+    assert loaded_notes == [note]
+    assert loaded_notes[0].deleted_at == "2026-01-01T00:00:00+00:00"
+    assert loaded_notes[0].board_id == "board-1"
+
+
 def test_load_missing_file_returns_empty(tmp_path):
     notes, boards, settings = storage.load_all(path=tmp_path / "nope.json")
     assert notes == []

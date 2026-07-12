@@ -28,6 +28,7 @@ REFRESH_DEBOUNCE_MS = 500
 ALL_NOTES = "__all__"
 UNFILED = "__unfiled__"
 TAG_PREFIX = "tag:"
+TRASH = "__trash__"
 
 
 def _format_modified(iso_timestamp: str) -> str:
@@ -159,9 +160,19 @@ class NotesBrowserWindow(QWidget):
         new_board_btn.clicked.connect(lambda: self.manager.create_board())
         toolbar.addWidget(new_board_btn)
 
-        delete_btn = QPushButton("Delete")
-        delete_btn.clicked.connect(self._delete_selected_notes)
-        toolbar.addWidget(delete_btn)
+        # Label/behavior both switch based on the Trash node's own
+        # docstring/history above: Delete means Move to Trash everywhere
+        # except while actually viewing Trash, where it's the only place
+        # a permanent delete is reachable at all. See _update_toolbar().
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.clicked.connect(self._delete_selected_notes)
+        toolbar.addWidget(self.delete_btn)
+
+        self.restore_btn = QPushButton("Restore")
+        self.restore_btn.clicked.connect(self._restore_selected_notes)
+        self.restore_btn.hide()  # only meaningful while viewing Trash
+        toolbar.addWidget(self.restore_btn)
+
         toolbar.addStretch()
         right_layout.addLayout(toolbar)
 
@@ -240,10 +251,19 @@ class NotesBrowserWindow(QWidget):
 
         # Computed fresh from live note data every refresh rather than a
         # separate tag registry — a tag exists implicitly as long as at
-        # least one note still uses it, and disappears from here the
-        # moment none do, matching the fully-free-form vocabulary
-        # decision (no predefined/managed tag list).
-        all_tags = sorted({tag for nw in self.manager.notes.values() for tag in nw.note.tags})
+        # least one *active* (non-trashed) note still uses it, and
+        # disappears from here the moment none do, matching the
+        # fully-free-form vocabulary decision (no predefined/managed tag
+        # list). Trashed notes' tags don't count — a tag orphaned only by
+        # trashing shouldn't linger here as if it were still in use.
+        all_tags = sorted(
+            {
+                tag
+                for nw in self.manager.notes.values()
+                if nw.note.deleted_at is None
+                for tag in nw.note.tags
+            }
+        )
         if all_tags:
             tags_item = QTreeWidgetItem(["Tags"])
             # Not selectable — it has no natural "show notes with any
@@ -258,6 +278,16 @@ class NotesBrowserWindow(QWidget):
                 if tag_data == selected_id:
                     restored_selection = tag_item
             tags_item.setExpanded(True)
+
+        # Always present (unlike Tags, which only exists when at least
+        # one tag is in use) — Trash is a structural concept, not
+        # data-derived, so it should be as reliably findable as All
+        # Notes/Unfiled even when empty.
+        trash_item = QTreeWidgetItem(["Trash"])
+        trash_item.setData(0, Qt.UserRole, TRASH)
+        self.tree.addTopLevelItem(trash_item)
+        if selected_id == TRASH:
+            restored_selection = trash_item
 
         if restored_selection is not None:
             self.tree.setCurrentItem(restored_selection)
@@ -278,6 +308,11 @@ class NotesBrowserWindow(QWidget):
     def _notes_for_current_selection(self):
         board_filter = self._current_tree_filter()
         notes = list(self.manager.notes.values())
+        if board_filter == TRASH:
+            return [nw for nw in notes if nw.note.deleted_at is not None]
+        # Every other view excludes trashed notes — Trash is deliberately
+        # separate from normal browsing, not just another filter.
+        notes = [nw for nw in notes if nw.note.deleted_at is None]
         if board_filter == ALL_NOTES:
             return notes
         if board_filter == UNFILED:
@@ -288,10 +323,19 @@ class NotesBrowserWindow(QWidget):
         return [nw for nw in notes if nw.note.board_id == board_filter]
 
     def _apply_filter(self):
+        in_trash = self._current_tree_filter() == TRASH
+        self._update_toolbar(in_trash)
+
         query = self.search_edit.text().strip().lower()
         note_windows = self._notes_for_current_selection()
         if query:
             note_windows = [nw for nw in note_windows if self._matches_query(nw, query)]
+
+        # "Date Deleted" while viewing Trash — deleted_at is guaranteed
+        # set for every note _notes_for_current_selection() returns here,
+        # since the TRASH branch only ever returns notes where it's set.
+        date_header = "Date Deleted" if in_trash else "Date Modified"
+        self.table.setHorizontalHeaderItem(3, QTableWidgetItem(date_header))
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(note_windows))
@@ -302,9 +346,14 @@ class NotesBrowserWindow(QWidget):
             self.table.setItem(row, 0, title_item)
             self.table.setItem(row, 1, QTableWidgetItem(self._preview_text(note_window)))
             self.table.setItem(row, 2, QTableWidgetItem(self._board_name(note)))
-            self.table.setItem(row, 3, _DateTableWidgetItem(note.modified_at))
+            date_value = note.deleted_at if in_trash else note.modified_at
+            self.table.setItem(row, 3, _DateTableWidgetItem(date_value))
             self.table.setItem(row, 4, QTableWidgetItem(", ".join(note.tags)))
         self.table.setSortingEnabled(True)
+
+    def _update_toolbar(self, in_trash: bool):
+        self.delete_btn.setText("Delete Permanently" if in_trash else "Delete")
+        self.restore_btn.setVisible(in_trash)
 
     @staticmethod
     def _preview_text(note_window, limit: int = 60) -> str:
@@ -354,7 +403,12 @@ class NotesBrowserWindow(QWidget):
 
     def _open_selected_note(self):
         note_window = self._selected_note_window()
-        if note_window is None:
+        # A trashed note is deliberately hidden until restored (see
+        # NoteManager.trash_note) — showing it here as a side effect of
+        # double-clicking its Trash row would leave it in a confusing
+        # half-restored state (visible again, but note.deleted_at still
+        # set), so this is a no-op while viewing Trash. Use Restore.
+        if note_window is None or note_window.note.deleted_at is not None:
             return
         note_window.show()
         note_window.raise_()
@@ -362,16 +416,39 @@ class NotesBrowserWindow(QWidget):
 
     def _delete_selected_notes(self):
         note_windows = self._selected_note_windows()
-        if note_windows:
-            self._confirm_and_delete(note_windows)
-
-    def _confirm_and_delete(self, note_windows):
-        if len(note_windows) == 1:
-            question = "Delete this note permanently?"
+        if not note_windows:
+            return
+        if self._current_tree_filter() == TRASH:
+            self._confirm_and_delete_permanently(note_windows)
         else:
-            question = f"Delete these {len(note_windows)} notes permanently?"
+            self._confirm_and_trash(note_windows)
+
+    def _restore_selected_notes(self):
+        self._restore_note_windows(self._selected_note_windows())
+
+    def _restore_note_windows(self, note_windows):
+        for note_window in note_windows:
+            self.manager.restore_note(note_window)
+
+    def _confirm_and_trash(self, note_windows):
+        if len(note_windows) == 1:
+            question = "Move this note to Trash?"
+        else:
+            question = f"Move these {len(note_windows)} notes to Trash?"
         reply = QMessageBox.question(
-            self, "Delete Note", question, QMessageBox.Yes | QMessageBox.No
+            self, "Move to Trash", question, QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            for note_window in note_windows:
+                self.manager.trash_note(note_window)
+
+    def _confirm_and_delete_permanently(self, note_windows):
+        if len(note_windows) == 1:
+            question = "Delete this note permanently? This cannot be undone."
+        else:
+            question = f"Delete these {len(note_windows)} notes permanently? This cannot be undone."
+        reply = QMessageBox.question(
+            self, "Delete Permanently", question, QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             for note_window in note_windows:
@@ -387,22 +464,36 @@ class NotesBrowserWindow(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_qss())
 
-        if len(note_windows) == 1:
-            note_window = note_windows[0]
-            show_action = menu.addAction("Show Note")
-            show_action.triggered.connect(self._open_selected_note)
-
-            if note_window.note.board_id is not None:
-                remove_action = menu.addAction("Remove from Notepad")
-                remove_action.triggered.connect(
-                    lambda: self.manager.detach_note_from_board(note_window)
-                )
+        if self._current_tree_filter() == TRASH:
+            if len(note_windows) == 1:
+                restore_action = menu.addAction("Restore")
+            else:
+                restore_action = menu.addAction(f"Restore {len(note_windows)} Notes")
+            restore_action.triggered.connect(lambda: self._restore_note_windows(note_windows))
 
             menu.addSeparator()
-            delete_action = menu.addAction("Delete Note")
+            if len(note_windows) == 1:
+                delete_action = menu.addAction("Delete Permanently")
+            else:
+                delete_action = menu.addAction(f"Delete {len(note_windows)} Notes Permanently")
+            delete_action.triggered.connect(lambda: self._confirm_and_delete_permanently(note_windows))
         else:
-            delete_action = menu.addAction(f"Delete {len(note_windows)} Notes")
-        delete_action.triggered.connect(lambda: self._confirm_and_delete(note_windows))
+            if len(note_windows) == 1:
+                note_window = note_windows[0]
+                show_action = menu.addAction("Show Note")
+                show_action.triggered.connect(self._open_selected_note)
+
+                if note_window.note.board_id is not None:
+                    remove_action = menu.addAction("Remove from Notepad")
+                    remove_action.triggered.connect(
+                        lambda: self.manager.detach_note_from_board(note_window)
+                    )
+
+                menu.addSeparator()
+                delete_action = menu.addAction("Move to Trash")
+            else:
+                delete_action = menu.addAction(f"Move {len(note_windows)} Notes to Trash")
+            delete_action.triggered.connect(lambda: self._confirm_and_trash(note_windows))
 
         menu.exec(self.table.viewport().mapToGlobal(pos))
 

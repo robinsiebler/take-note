@@ -80,7 +80,7 @@ def test_tree_has_all_notes_and_unfiled_plus_one_item_per_board(qapp):
 
     browser = NotesBrowserWindow(manager)
 
-    assert _tree_labels(browser) == ["All Notes", "Unfiled", "Work", "Personal"]
+    assert _tree_labels(browser) == ["All Notes", "Unfiled", "Work", "Personal", "Trash"]
 
 
 def test_all_notes_selected_by_default_shows_every_note(qapp):
@@ -280,7 +280,11 @@ def test_selecting_unfiled_shows_only_notes_without_a_board(qapp):
     assert browser.table.item(0, 0).text() == "Groceries"
 
 
-def test_delete_selected_note_confirms_then_calls_manager_delete_note(qapp, monkeypatch):
+def test_delete_selected_note_confirms_then_calls_manager_trash_note(qapp, monkeypatch):
+    """Delete now means Move to Trash everywhere except the Trash view
+    itself (see test_delete_selected_note_in_trash_view_deletes_permanently
+    below) — manager.delete_note() (permanent) is no longer reachable
+    from a normal note selection."""
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     n1 = _note_window(title="Groceries")
     manager = _fake_manager(notes={n1.note.id: n1})
@@ -289,7 +293,8 @@ def test_delete_selected_note_confirms_then_calls_manager_delete_note(qapp, monk
 
     browser._delete_selected_notes()
 
-    manager.delete_note.assert_called_once_with(n1)
+    manager.trash_note.assert_called_once_with(n1)
+    manager.delete_note.assert_not_called()
 
 
 def test_delete_selected_note_does_nothing_when_declined(qapp, monkeypatch):
@@ -301,13 +306,13 @@ def test_delete_selected_note_does_nothing_when_declined(qapp, monkeypatch):
 
     browser._delete_selected_notes()
 
-    manager.delete_note.assert_not_called()
+    manager.trash_note.assert_not_called()
 
 
-def test_multi_select_delete_asks_once_and_deletes_every_selected_note(qapp, monkeypatch):
+def test_multi_select_delete_asks_once_and_trashes_every_selected_note(qapp, monkeypatch):
     """Regression coverage for extending selection beyond a single row:
     one confirmation dialog, not one per note, and every selected note
-    gets deleted."""
+    gets trashed."""
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     n1 = _note_window(title="Groceries")
     n2 = _note_window(title="Taxes")
@@ -317,9 +322,92 @@ def test_multi_select_delete_asks_once_and_deletes_every_selected_note(qapp, mon
 
     browser._delete_selected_notes()
 
-    assert manager.delete_note.call_count == 2
-    manager.delete_note.assert_any_call(n1)
-    manager.delete_note.assert_any_call(n2)
+    assert manager.trash_note.call_count == 2
+    manager.trash_note.assert_any_call(n1)
+    manager.trash_note.assert_any_call(n2)
+
+
+def _select_tree_item(browser: NotesBrowserWindow, label: str):
+    for i in range(browser.tree.topLevelItemCount()):
+        item = browser.tree.topLevelItem(i)
+        if item.text(0) == label:
+            browser.tree.setCurrentItem(item)
+            return
+    raise AssertionError(f"no top-level tree item named {label!r}")
+
+
+def test_delete_selected_note_in_trash_view_deletes_permanently(qapp, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    n1 = _note_window(title="Groceries", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+    _select_tree_item(browser, "Trash")
+    browser.table.selectRow(0)
+
+    browser._delete_selected_notes()
+
+    manager.delete_note.assert_called_once_with(n1)
+    manager.trash_note.assert_not_called()
+
+
+def test_restore_selected_notes_calls_manager_restore_note(qapp):
+    n1 = _note_window(title="Groceries", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+    _select_tree_item(browser, "Trash")
+    browser.table.selectRow(0)
+
+    browser._restore_selected_notes()
+
+    manager.restore_note.assert_called_once_with(n1)
+
+
+def test_trashed_notes_excluded_from_all_notes(qapp):
+    active = _note_window(title="Groceries")
+    trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={active.note.id: active, trashed.note.id: trashed})
+
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.rowCount() == 1
+    assert browser.table.item(0, 0).text() == "Groceries"
+
+
+def test_trash_view_shows_only_trashed_notes(qapp):
+    active = _note_window(title="Groceries")
+    trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={active.note.id: active, trashed.note.id: trashed})
+    browser = NotesBrowserWindow(manager)
+
+    _select_tree_item(browser, "Trash")
+
+    assert browser.table.rowCount() == 1
+    assert browser.table.item(0, 0).text() == "Old note"
+
+
+def test_toolbar_shows_restore_and_relabels_delete_only_in_trash_view(qapp):
+    manager = _fake_manager()
+    browser = NotesBrowserWindow(manager)
+
+    assert not browser.restore_btn.isVisible()
+    assert browser.delete_btn.text() == "Delete"
+
+    _select_tree_item(browser, "Trash")
+
+    assert browser.restore_btn.isVisible()
+    assert browser.delete_btn.text() == "Delete Permanently"
+
+
+def test_double_clicking_a_trashed_note_does_not_show_it(qapp):
+    trashed = _note_window(title="Old note", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={trashed.note.id: trashed})
+    browser = NotesBrowserWindow(manager)
+    _select_tree_item(browser, "Trash")
+    browser.table.selectRow(0)
+
+    browser._open_selected_note()
+
+    trashed.show.assert_not_called()
 
 
 def test_table_allows_extended_selection(qapp):
