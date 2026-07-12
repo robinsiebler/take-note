@@ -16,6 +16,7 @@ from PySide6.QtGui import (
     QImage,
     QKeySequence,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QTextCharFormat,
@@ -180,6 +181,38 @@ def lock_icon(locked: bool, size: int = 18) -> QIcon:
     body_h = size * 0.42
     body_rect = QRectF((size - body_w) / 2, size * 0.46 + y_offset, body_w, body_h)
     painter.drawRoundedRect(body_rect, size * 0.06, size * 0.06)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def tag_icon(size: int = 18) -> QIcon:
+    """A hand-drawn filled ribbon/label shape, matching lock_icon's
+    approach of drawing our own pixmap rather than trusting a Unicode
+    glyph. Plain white, same as every other unlocked-state header icon —
+    tags aren't a restricted/warning state like a locked note, so no
+    second color was needed. Mocked up against a punched-hole outline
+    variant first; this filled shape read more clearly at 18px."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor("white"))
+
+    path = QPainterPath()
+    left = size * 0.2
+    right = size * 0.8
+    top = size * 0.18
+    bottom = size * 0.82
+    notch = size * 0.14
+    path.moveTo(left, top)
+    path.lineTo(right, top)
+    path.lineTo(right, bottom)
+    path.lineTo((left + right) / 2, bottom - notch)
+    path.lineTo(left, bottom)
+    path.closeSubpath()
+    painter.drawPath(path)
 
     painter.end()
     return QIcon(pixmap)
@@ -363,6 +396,17 @@ class NoteHeader(QWidget):
         self.roll_btn.clicked.connect(note_window.toggle_rolled)
         layout.addWidget(self.roll_btn)
 
+        # Hidden by default, shown only when the note actually has tags
+        # (see update_tag_indicator) — most notes won't have any, and an
+        # always-visible empty-state icon would just be header clutter.
+        self.tag_btn = QToolButton()
+        self.tag_btn.setAutoRaise(True)
+        self.tag_btn.setIconSize(QSize(18, 18))
+        self.tag_btn.setIcon(tag_icon())
+        self.tag_btn.clicked.connect(note_window.show_tags_dialog)
+        self.tag_btn.hide()
+        layout.addWidget(self.tag_btn)
+
         self.lock_btn = _LockButton(note_window)
         self.lock_btn.setAutoRaise(True)
         self.lock_btn.setIconSize(QSize(18, 18))
@@ -381,6 +425,11 @@ class NoteHeader(QWidget):
         close_btn.setToolTip("Delete note")
         close_btn.clicked.connect(note_window.confirm_delete)
         layout.addWidget(close_btn)
+
+    def update_tag_indicator(self, tags: list[str]):
+        self.tag_btn.setVisible(bool(tags))
+        if tags:
+            self.tag_btn.setToolTip("Tags: " + ", ".join(tags))
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -856,6 +905,7 @@ class NoteWindow(QWidget):
         # before this method ever gets a chance to run and correct it.
         self.body.cursorPositionChanged.connect(self._fix_ambient_char_format)
         self.set_locked(note.locked, persist=False)
+        self.header.update_tag_indicator(note.tags)
         self.title_bar.set_title(note.title)
         self._apply_opacity()
         self.show()
@@ -1397,6 +1447,7 @@ class NoteWindow(QWidget):
         self.note.tags = list(
             dict.fromkeys(t.strip() for t in dialog.textValue().split(",") if t.strip())
         )
+        self.header.update_tag_indicator(self.note.tags)
         self.mark_changed()
 
     def show_insert_image_dialog(self):

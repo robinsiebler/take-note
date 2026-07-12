@@ -38,8 +38,9 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
   a hidden one) without hunting across the desktop.
 - Tags: free-form, per-note tags (no predefined list) assigned via the
   hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
-  Notes Browser only for now — no indicator on the note window itself
-  yet.
+  Notes Browser, plus a small ribbon icon in the note's own header
+  (next to the lock icon) whenever it has at least one tag — hover it
+  for the full tag list, click it to open the Tags… dialog directly.
 - Settings dialog (tray → Settings…): launch at login, default note
   color/font size/color, whether new notes start always-on-top, optional
   spell check, and a hotkey recorder that live-tests a combo for
@@ -147,8 +148,6 @@ Browser, tags, and a manual test plan under `test_cases/`) is done — see
 Features above rather than re-deriving it from history here.
 
 **Still open, lower priority:**
-- A small indicator on the note window itself for tagged notes (Tags are
-  currently Notes-Browser-only)
 - Reminders / alarms (needs a real notification/alarm subsystem)
 - Interactive checklists inside notes (needs a custom `QTextObjectInterface`,
   unlike bullets/numbering above)
