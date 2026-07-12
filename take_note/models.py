@@ -85,6 +85,7 @@ class Note:
     locked: bool = False
     opacity: float = 1.0
     board_id: str | None = None
+    tags: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now_iso)
     modified_at: str = field(default_factory=_now_iso)
 

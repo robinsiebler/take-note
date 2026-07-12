@@ -1368,6 +1368,20 @@ class NoteWindow(QWidget):
         self.title_bar.set_title(self.note.title)
         self.mark_changed()
 
+    def show_tags_dialog(self):
+        dialog = self._new_note_dialog("Tags", "Tags (comma-separated):", ", ".join(self.note.tags))
+        dialog.resize(480, dialog.sizeHint().height())
+        self._center_dialog_over_note(dialog)
+        if dialog.exec() != QInputDialog.Accepted:
+            return
+        # dict.fromkeys() rather than set() — dedupes while preserving
+        # the order the user typed them in, matching how a comma-
+        # separated field reads back most naturally.
+        self.note.tags = list(
+            dict.fromkeys(t.strip() for t in dialog.textValue().split(",") if t.strip())
+        )
+        self.mark_changed()
+
     def show_insert_image_dialog(self):
         # No parent (see _new_note_dialog's docstring) — the OS's native
         # file picker isn't affected by this note's own palette bleed,
@@ -2296,6 +2310,9 @@ class NoteWindow(QWidget):
         the body's text-formatting menu (see populate_text_menu)."""
         self.title_action.setText("Edit Title…" if self.note.title else "Add Title…")
         menu.addAction(self.title_action)
+
+        tags_action = menu.addAction("Tags…")
+        tags_action.triggered.connect(self.show_tags_dialog)
 
         color_action = menu.addAction("Change Note Color…")
         color_action.triggered.connect(lambda: self.show_color_menu(self))

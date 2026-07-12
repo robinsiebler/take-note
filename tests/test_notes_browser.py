@@ -143,6 +143,86 @@ def test_notepad_column_blank_when_unfiled(qapp):
     assert browser.table.item(0, 2).text() == ""
 
 
+def test_tags_column_shows_joined_tags(qapp):
+    n1 = _note_window(title="Report", tags=["work", "urgent"])
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.item(0, 4).text() == "work, urgent"
+
+
+def test_tags_column_blank_when_untagged(qapp):
+    n1 = _note_window(title="Groceries")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    assert browser.table.item(0, 4).text() == ""
+
+
+def test_tree_has_no_tags_section_when_no_notes_are_tagged(qapp):
+    n1 = _note_window(title="Groceries")
+    manager = _fake_manager(notes={n1.note.id: n1})
+
+    browser = NotesBrowserWindow(manager)
+
+    assert "Tags" not in _tree_labels(browser)
+
+
+def test_tree_tags_section_lists_unique_tags_in_use(qapp):
+    n1 = _note_window(title="Report", tags=["work", "urgent"])
+    n2 = _note_window(title="Groceries", tags=["urgent", "home"])
+    manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
+
+    browser = NotesBrowserWindow(manager)
+
+    tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
+    child_labels = [tags_item.child(i).text(0) for i in range(tags_item.childCount())]
+    assert child_labels == ["home", "urgent", "work"]
+
+
+def test_selecting_tag_filters_table_to_notes_with_that_tag(qapp):
+    n_work = _note_window(title="Report", tags=["work"])
+    n_other = _note_window(title="Groceries", tags=["home"])
+    manager = _fake_manager(notes={n_work.note.id: n_work, n_other.note.id: n_other})
+    browser = NotesBrowserWindow(manager)
+    tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
+    work_item = next(
+        tags_item.child(i) for i in range(tags_item.childCount()) if tags_item.child(i).text(0) == "work"
+    )
+
+    browser.tree.setCurrentItem(work_item)
+
+    assert browser.table.rowCount() == 1
+    assert browser.table.item(0, 0).text() == "Report"
+
+
+def test_tags_parent_item_is_not_selectable(qapp):
+    """The "Tags" parent has no natural "show notes with any tag"
+    filtering meaning of its own — only its children do."""
+    n1 = _note_window(title="Report", tags=["work"])
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+
+    tags_item = browser.tree.topLevelItem(_tree_labels(browser).index("Tags"))
+
+    assert not bool(tags_item.flags() & Qt.ItemIsSelectable)
+
+
+def test_orphaned_tag_disappears_after_refresh(qapp):
+    """Fully free-form vocabulary: a tag exists implicitly as long as at
+    least one note uses it, computed fresh from live note data every
+    refresh rather than a separate registry."""
+    n1 = _note_window(title="Report", tags=["work"])
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesBrowserWindow(manager)
+    assert "Tags" in _tree_labels(browser)
+
+    n1.note.tags = []
+    browser._refresh()
+
+    assert "Tags" not in _tree_labels(browser)
+
+
 def test_search_field_has_a_clear_button(qapp):
     """Regression: there was previously no way to clear the search box
     short of manually deleting the typed text."""

@@ -707,6 +707,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
     titles = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert titles == [
         "Add Title…",
+        "Tags…",
         "Change Note Color…",
         "Note Transparency",
         "Always on Top",
@@ -1113,6 +1114,48 @@ def test_show_title_dialog_strips_whitespace(qapp, monkeypatch):
     win.show_title_dialog()
 
     assert win.note.title == "Groceries"
+
+
+def test_show_tags_dialog_sets_tags(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_title_dialog(monkeypatch, "work, urgent", True)
+
+    win.show_tags_dialog()
+
+    assert win.note.tags == ["work", "urgent"]
+
+
+def test_show_tags_dialog_strips_whitespace_drops_empties_dedupes(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    _patch_title_dialog(monkeypatch, "  work ,, urgent, work", True)
+
+    win.show_tags_dialog()
+
+    assert win.note.tags == ["work", "urgent"]
+
+
+def test_show_tags_dialog_prefills_existing_tags(qapp, monkeypatch):
+    win = NoteWindow(Note(tags=["work", "urgent"]), manager=FakeManager())
+    seen = {}
+
+    def fake_exec(self):
+        seen["initial"] = self.textValue()
+        return QInputDialog.Rejected
+
+    monkeypatch.setattr(QInputDialog, "exec", fake_exec)
+
+    win.show_tags_dialog()
+
+    assert seen["initial"] == "work, urgent"
+
+
+def test_show_tags_dialog_cancelled_does_not_change_tags(qapp, monkeypatch):
+    win = NoteWindow(Note(tags=["work"]), manager=FakeManager())
+    _patch_title_dialog(monkeypatch, "something else", False)
+
+    win.show_tags_dialog()
+
+    assert win.note.tags == ["work"]
 
 
 def test_title_and_hyperlink_dialogs_have_a_clear_button(qapp, monkeypatch):
