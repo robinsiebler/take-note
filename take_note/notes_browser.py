@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .note_window import get_menu_qss
+from .x11_wm import set_skip_taskbar
 
 REFRESH_DEBOUNCE_MS = 500
 
@@ -95,6 +96,15 @@ class NotesBrowserWindow(QWidget):
 
         manager.notes_changed.connect(self._schedule_refresh)
         self.show()
+        # The only Take Note! window that didn't already skip the taskbar
+        # (notes/boards both do, via the same helper) — confirmed this was
+        # the window Plasma's Task Manager mislabeled with an unrelated
+        # app's icon (a real, upstream-confirmed KDE bug, not fixable from
+        # here). With a dedicated global hotkey to reopen it (see
+        # NoteManager._start_notes_browser_hotkey_listener), there's no
+        # remaining need for taskbar/Alt-Tab reachability, so hiding it
+        # removes the only window Plasma had left to mislabel.
+        set_skip_taskbar(int(self.winId()), True)
 
     def _restore_geometry(self):
         settings = self.manager.settings

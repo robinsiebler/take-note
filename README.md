@@ -130,7 +130,8 @@ Features above rather than re-deriving it from history here.
   rounded; the swatch layout/background styling itself is still an open
   design question
 - Configurable hotkeys for in-app actions (Bold/Italic/Add Title etc.) —
-  currently only the one global "new note" hotkey is user-configurable
+  currently only the two global hotkeys (new note, open Notes Browser)
+  are user-configurable
 - The Notepad corkboard window's own chrome is still visually plain
   compared to note windows, has no tray listing of existing boards or
   bulk reopen, and doesn't remember which boards were hidden across a

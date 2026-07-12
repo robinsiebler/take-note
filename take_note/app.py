@@ -63,6 +63,8 @@ class NoteManager(QObject):
 
         self.hotkey: HotkeyListener | None = None
         self._start_hotkey_listener()
+        self.notes_browser_hotkey: HotkeyListener | None = None
+        self._start_notes_browser_hotkey_listener()
 
         self.app.setQuitOnLastWindowClosed(False)
         self.app.aboutToQuit.connect(self._on_about_to_quit)
@@ -256,6 +258,9 @@ class NoteManager(QObject):
 
     def _apply_settings(self, new_settings: Settings):
         hotkey_changed = new_settings.hotkey != self.settings.hotkey
+        notes_browser_hotkey_changed = (
+            new_settings.notes_browser_hotkey != self.settings.notes_browser_hotkey
+        )
         spell_check_changed = new_settings.spell_check_enabled != self.settings.spell_check_enabled
         self.settings = new_settings
 
@@ -267,6 +272,9 @@ class NoteManager(QObject):
         if hotkey_changed:
             self._restart_hotkey_listener()
 
+        if notes_browser_hotkey_changed:
+            self._restart_notes_browser_hotkey_listener()
+
         if spell_check_changed:
             for note_window in self.notes.values():
                 if new_settings.spell_check_enabled:
@@ -277,16 +285,37 @@ class NoteManager(QObject):
         self._schedule_save()
 
     def _start_hotkey_listener(self):
+        # Settings.hotkey is None once a user explicitly clears it via
+        # the Clear button in Settings — leave self.hotkey None too
+        # rather than grabbing a combo nobody asked for.
+        if not self.settings.hotkey:
+            self.hotkey = None
+            return
         key, modifiers = parse_shortcut(self.settings.hotkey)
         self.hotkey = HotkeyListener(key, modifiers)
         self.hotkey.triggered.connect(lambda: self.create_note())
-        self.hotkey.grab_failed.connect(self._on_hotkey_failed)
+        self.hotkey.grab_failed.connect(lambda: self._on_hotkey_failed("new-note"))
         self.hotkey.start()
 
     def _restart_hotkey_listener(self):
         if self.hotkey is not None:
             self.hotkey.stop()
         self._start_hotkey_listener()
+
+    def _start_notes_browser_hotkey_listener(self):
+        if not self.settings.notes_browser_hotkey:
+            self.notes_browser_hotkey = None
+            return
+        key, modifiers = parse_shortcut(self.settings.notes_browser_hotkey)
+        self.notes_browser_hotkey = HotkeyListener(key, modifiers)
+        self.notes_browser_hotkey.triggered.connect(lambda: self.open_notes_browser())
+        self.notes_browser_hotkey.grab_failed.connect(lambda: self._on_hotkey_failed("Notes Browser"))
+        self.notes_browser_hotkey.start()
+
+    def _restart_notes_browser_hotkey_listener(self):
+        if self.notes_browser_hotkey is not None:
+            self.notes_browser_hotkey.stop()
+        self._start_notes_browser_hotkey_listener()
 
     # -- persistence -------------------------------------------------------
 
@@ -301,12 +330,14 @@ class NoteManager(QObject):
 
     # -- lifecycle ---------------------------------------------------------
 
-    def _on_hotkey_failed(self):
-        logger.warning("Global hotkey could not be registered (combo may already be in use)")
+    def _on_hotkey_failed(self, name: str):
+        logger.warning("%s hotkey could not be registered (combo may already be in use)", name)
 
     def _on_about_to_quit(self):
         if self.hotkey is not None:
             self.hotkey.stop()
+        if self.notes_browser_hotkey is not None:
+            self.notes_browser_hotkey.stop()
         for note_window in self.notes.values():
             note_window._clear_window_watcher()
         self._save_timer.stop()

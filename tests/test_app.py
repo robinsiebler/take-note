@@ -282,3 +282,142 @@ def test_apply_settings_leaves_highlighters_alone_when_unchanged(monkeypatch):
 
     note_window._attach_spell_highlighter.assert_not_called()
     note_window._detach_spell_highlighter.assert_not_called()
+
+
+class _FakeHotkeyListener:
+    """Stands in for the real HotkeyListener (a QThread that opens a real
+    X11 connection and would hang/crash under the offscreen QPA platform,
+    same reasoning _fake_manager's docstring above gives for not
+    constructing a real NoteManager). Records every instance created so
+    tests can inspect what key/modifiers it was built with and fire its
+    `triggered` callback manually."""
+
+    instances: list["_FakeHotkeyListener"] = []
+
+    def __init__(self, key, modifiers):
+        self.key = key
+        self.modifiers = modifiers
+        self.triggered = Mock()
+        self.grab_failed = Mock()
+        self.started = False
+        _FakeHotkeyListener.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+
+def test_start_hotkey_listener_skips_grabbing_when_cleared(monkeypatch):
+    """Settings.hotkey is None once explicitly cleared via Settings'
+    Clear button — no listener should be created or started at all,
+    not a grab for some fallback/empty combo."""
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(hotkey=None)
+
+    NoteManager._start_hotkey_listener(manager)
+
+    assert _FakeHotkeyListener.instances == []
+    assert manager.hotkey is None
+
+
+def test_start_notes_browser_hotkey_listener_skips_grabbing_when_cleared(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(notes_browser_hotkey=None)
+
+    NoteManager._start_notes_browser_hotkey_listener(manager)
+
+    assert _FakeHotkeyListener.instances == []
+    assert manager.notes_browser_hotkey is None
+
+
+def test_start_notes_browser_hotkey_listener_uses_the_configured_combo(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(notes_browser_hotkey="Meta+Alt+B")
+
+    NoteManager._start_notes_browser_hotkey_listener(manager)
+
+    listener = _FakeHotkeyListener.instances[0]
+    assert (listener.key, listener.modifiers) == ("B", ("meta", "mod1"))
+    assert listener.started
+    assert manager.notes_browser_hotkey is listener
+
+
+def test_notes_browser_hotkey_triggered_opens_the_notes_browser(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(notes_browser_hotkey="Meta+Alt+B")
+
+    NoteManager._start_notes_browser_hotkey_listener(manager)
+
+    triggered_callback = _FakeHotkeyListener.instances[0].triggered.connect.call_args[0][0]
+    triggered_callback()
+
+    manager.open_notes_browser.assert_called_once()
+
+
+def test_restart_notes_browser_hotkey_listener_stops_the_old_one(monkeypatch):
+    _FakeHotkeyListener.instances = []
+    monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)
+    manager = Mock()
+    manager.settings = Settings(notes_browser_hotkey="Meta+Alt+B")
+    # _restart...() calls self._start_notes_browser_hotkey_listener()
+    # internally — on a bare Mock that would just hit an auto-generated
+    # stub instead of the real method, so bind the real implementation
+    # through explicitly (same reasoning as _fake_manager's docstring
+    # above for why a real NoteManager isn't constructed here).
+    manager._start_notes_browser_hotkey_listener = (
+        lambda: NoteManager._start_notes_browser_hotkey_listener(manager)
+    )
+    old_listener = Mock()
+    manager.notes_browser_hotkey = old_listener
+
+    NoteManager._restart_notes_browser_hotkey_listener(manager)
+
+    old_listener.stop.assert_called_once()
+    assert manager.notes_browser_hotkey is _FakeHotkeyListener.instances[0]
+
+
+def test_apply_settings_restarts_only_the_new_note_hotkey_when_only_it_changed(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(
+        Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+B")
+    )
+
+    NoteManager._apply_settings(
+        manager, Settings(hotkey="Meta+Alt+X", notes_browser_hotkey="Meta+Alt+B")
+    )
+
+    manager._restart_hotkey_listener.assert_called_once()
+    manager._restart_notes_browser_hotkey_listener.assert_not_called()
+
+
+def test_apply_settings_restarts_only_the_notes_browser_hotkey_when_only_it_changed(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "enable", Mock())
+    monkeypatch.setattr(app_module.autostart, "disable", Mock())
+    manager = _fake_manager_for_apply_settings(
+        Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+B")
+    )
+
+    NoteManager._apply_settings(
+        manager, Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+X")
+    )
+
+    manager._restart_hotkey_listener.assert_not_called()
+    manager._restart_notes_browser_hotkey_listener.assert_called_once()
+
+
+def test_on_about_to_quit_stops_both_hotkey_listeners():
+    manager = Mock()
+    manager.notes = {}
+
+    NoteManager._on_about_to_quit(manager)
+
+    manager.hotkey.stop.assert_called_once()
+    manager.notes_browser_hotkey.stop.assert_called_once()

@@ -35,6 +35,22 @@ def _tree_labels(browser: NotesBrowserWindow) -> list[str]:
     return [browser.tree.topLevelItem(i).text(0) for i in range(browser.tree.topLevelItemCount())]
 
 
+def test_notes_browser_skips_the_taskbar(qapp, monkeypatch):
+    """The one Take Note! window that used to be visible in the taskbar —
+    notes/boards already skip it — which is what a real KDE Task Manager
+    bug (confirmed unrelated to this app, filed upstream) mislabeled with
+    an unrelated app's icon. With a dedicated hotkey to reopen it, there's
+    no remaining need for taskbar/Alt-Tab reachability."""
+    calls = []
+    monkeypatch.setattr(
+        "take_note.notes_browser.set_skip_taskbar", lambda win_id, enabled: calls.append((win_id, enabled))
+    )
+
+    NotesBrowserWindow(_fake_manager())
+
+    assert calls == [(calls[0][0], True)]
+
+
 def test_format_modified_converts_utc_to_local_time():
     """Regression, reported live: displayed "07:11 PM" when the actual
     local wall-clock time was 12:33 PM — datetime.fromisoformat() on a

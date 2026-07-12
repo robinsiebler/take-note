@@ -8,7 +8,7 @@ from PySide6.QtCore import QThread, Signal
 logger = logging.getLogger(__name__)
 
 DEFAULT_KEY = "n"
-DEFAULT_MODIFIERS = ("control", "mod1")  # Ctrl+Alt+N
+DEFAULT_MODIFIERS = ("meta", "mod1")  # Meta+Alt+N
 
 # Maps QKeySequence's string modifier names (as produced by
 # QKeySequence.toString(), e.g. "Ctrl+Alt+N") to our internal modifier

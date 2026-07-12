@@ -28,12 +28,18 @@
   instead.
 - System tray icon: create notes/boards, open the Notes Browser, open
   Settings, quit.
-- Global hotkey (default `Ctrl+Alt+N`, user-configurable in Settings) to
-  create a new note from anywhere.
-- Notes Browser (tray → "Notes Browser…"): a sortable, searchable table
-  of every note (Title/Preview/Notepad/Date Modified/Tags columns) plus
-  a tree of boards and tags to filter by, for finding a note (including
-  a hidden one) without hunting across the desktop.
+- Two global hotkeys, both user-configurable in Settings: create a new
+  note from anywhere (default `Meta+Alt+N`), and open the Notes Browser
+  from anywhere (default `Meta+Alt+B`).
+- Notes Browser (tray → "Notes Browser…", or its own global hotkey
+  above): a sortable, searchable table of every note (Title/Preview/
+  Notepad/Date Modified/Tags columns) plus a tree of boards and tags to
+  filter by, for finding a note (including a hidden one) without
+  hunting across the desktop. Deliberately excluded from the taskbar,
+  pager, and Alt-Tab switcher — reachable only via the tray or its
+  hotkey — since it was the one Take Note! window a real, unrelated KDE
+  Task Manager bug (confirmed not caused by this app) could mislabel
+  with another app's icon.
 - Tags: free-form, per-note tags (no predefined list) assigned via the
   hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
   Notes Browser, plus a small ribbon icon in the note's own header
@@ -41,8 +47,9 @@
   for the full tag list, click it to open the Tags… dialog directly.
 - Settings dialog (tray → Settings…): launch at login, default note
   color/font size/color, whether new notes start always-on-top, optional
-  spell check, and a hotkey recorder that live-tests a combo for
-  conflicts before committing to it. Has Apply (try a setting without
+  spell check, and a hotkey recorder (one for each global hotkey above)
+  that live-tests a combo for conflicts — with either app itself or the
+  other hotkey — before committing to it. Has Apply (try a setting without
   closing the dialog) alongside OK/Cancel, and remembers its own window
   position across restarts.
 - Notepads: group notes onto a shared corkboard-style window that shows,

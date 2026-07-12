@@ -228,6 +228,130 @@ def test_test_hotkey_starts_a_real_test_for_a_different_combo(qapp, monkeypatch)
     assert dialog._test_listener is not None
 
 
+def test_notes_browser_hotkey_field_initializes_from_settings(qapp):
+    dialog = SettingsDialog(Settings(notes_browser_hotkey="Meta+Alt+B"))
+
+    assert dialog.notes_browser_hotkey_edit.keySequence().toString() == "Meta+Alt+B"
+
+
+def test_result_settings_reflects_changed_notes_browser_hotkey(qapp):
+    dialog = SettingsDialog(Settings(notes_browser_hotkey="Meta+Alt+B"))
+    dialog.notes_browser_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+X"))
+
+    result = dialog.result_settings()
+
+    assert result.notes_browser_hotkey == "Meta+Alt+X"
+
+
+def test_dialog_initializes_cleanly_when_hotkeys_are_none(qapp):
+    """A previously-cleared hotkey (Settings.hotkey/notes_browser_hotkey
+    is None) must not crash QKeySequenceEdit's construction."""
+    dialog = SettingsDialog(Settings(hotkey=None, notes_browser_hotkey=None))
+
+    assert dialog.hotkey_edit.keySequence().isEmpty()
+    assert dialog.notes_browser_hotkey_edit.keySequence().isEmpty()
+
+
+def test_hotkey_clear_button_empties_the_field(qapp):
+    dialog = SettingsDialog(Settings(hotkey="Meta+Alt+N"))
+
+    dialog.hotkey_clear_button.click()
+
+    assert dialog.hotkey_edit.keySequence().isEmpty()
+
+
+def test_notes_browser_hotkey_clear_button_empties_the_field(qapp):
+    dialog = SettingsDialog(Settings(notes_browser_hotkey="Meta+Alt+B"))
+
+    dialog.notes_browser_hotkey_clear_button.click()
+
+    assert dialog.notes_browser_hotkey_edit.keySequence().isEmpty()
+
+
+def test_result_settings_commits_none_for_a_cleared_hotkey(qapp):
+    """Regression: clearing the field used to silently fall back to the
+    old value in result_settings() (`... or self._settings.hotkey`),
+    so there was no way to actually remove a hotkey at all — only the
+    Clear button (plus this fix) makes "no hotkey" reachable."""
+    dialog = SettingsDialog(Settings(hotkey="Meta+Alt+N"))
+    dialog.hotkey_edit.clear()
+
+    result = dialog.result_settings()
+
+    assert result.hotkey is None
+
+
+def test_result_settings_commits_none_for_a_cleared_notes_browser_hotkey(qapp):
+    dialog = SettingsDialog(Settings(notes_browser_hotkey="Meta+Alt+B"))
+    dialog.notes_browser_hotkey_edit.clear()
+
+    result = dialog.result_settings()
+
+    assert result.notes_browser_hotkey is None
+
+
+def test_test_hotkey_on_empty_field_prompts_for_a_combo_instead_of_crashing(qapp):
+    """current_value can now legitimately be None (already-cleared
+    hotkey) — the self-conflict check must not call parse_shortcut(None)."""
+    dialog = SettingsDialog(Settings(hotkey=None))
+
+    dialog._test_hotkey()
+
+    assert dialog.hotkey_status.text() == "Enter a key combination first"
+
+
+def test_test_notes_browser_hotkey_recognizes_unchanged_current_combo(qapp):
+    settings = Settings(notes_browser_hotkey="Meta+Alt+B")
+    dialog = SettingsDialog(settings)
+    dialog.notes_browser_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+B"))
+
+    dialog._test_notes_browser_hotkey()
+
+    assert dialog.notes_browser_hotkey_status.text() == "This is already your current hotkey"
+    assert dialog._test_listener is None
+
+
+def test_test_hotkey_rejects_combo_matching_the_other_hotkey_field(qapp):
+    """The two global hotkeys can't share a combo — setting the New Note
+    field to whatever the Notes Browser field currently shows (edited or
+    not) must be caught before a real test grab, not just left to fail
+    confusingly once both are saved."""
+    settings = Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+B")
+    dialog = SettingsDialog(settings)
+    dialog.hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+B"))
+
+    dialog._test_hotkey()
+
+    assert dialog.hotkey_status.text() == "Same as the Notes Browser hotkey — pick a different combination"
+    assert dialog._test_listener is None
+
+
+def test_test_notes_browser_hotkey_rejects_combo_matching_the_other_field(qapp):
+    settings = Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+B")
+    dialog = SettingsDialog(settings)
+    dialog.notes_browser_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+N"))
+
+    dialog._test_notes_browser_hotkey()
+
+    assert dialog.notes_browser_hotkey_status.text() == "Same as the New Note hotkey — pick a different combination"
+    assert dialog._test_listener is None
+
+
+def test_test_hotkey_allows_a_combo_matching_neither_field(qapp, monkeypatch):
+    from take_note.hotkey import HotkeyListener
+
+    started = []
+    monkeypatch.setattr(HotkeyListener, "start", lambda self: started.append(self))
+    settings = Settings(hotkey="Meta+Alt+N", notes_browser_hotkey="Meta+Alt+B")
+    dialog = SettingsDialog(settings)
+    dialog.hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+X"))
+
+    dialog._test_hotkey()
+
+    assert dialog.hotkey_status.text() == "Testing…"
+    assert len(started) == 1
+
+
 def test_spell_check_checkbox_reflects_settings_when_available(qapp, monkeypatch):
     monkeypatch.setattr(spellcheck, "is_available", lambda: True)
 
