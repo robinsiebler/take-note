@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QGraphicsOpacityEffect,
+    QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
     QPushButton,
@@ -251,8 +252,13 @@ class SettingsDialog(QDialog):
         form = QFormLayout(tab)
 
         form.addRow(QLabel("Global hotkey to create a new note:"))
-        self.hotkey_edit = QKeySequenceEdit(QKeySequence(self._settings.hotkey))
-        form.addRow(self.hotkey_edit)
+        self.hotkey_edit = QKeySequenceEdit(QKeySequence(self._settings.hotkey or ""))
+        hotkey_row = QHBoxLayout()
+        hotkey_row.addWidget(self.hotkey_edit)
+        self.hotkey_clear_button = QPushButton("Clear")
+        self.hotkey_clear_button.clicked.connect(self.hotkey_edit.clear)
+        hotkey_row.addWidget(self.hotkey_clear_button)
+        form.addRow(hotkey_row)
 
         test_button = QPushButton("Test")
         test_button.clicked.connect(self._test_hotkey)
@@ -261,17 +267,62 @@ class SettingsDialog(QDialog):
         self.hotkey_status = QLabel("")
         form.addRow(self.hotkey_status)
 
+        form.addRow(QLabel(""))  # spacer between the two hotkey sections
+
+        form.addRow(QLabel("Global hotkey to open the Notes Browser:"))
+        self.notes_browser_hotkey_edit = QKeySequenceEdit(
+            QKeySequence(self._settings.notes_browser_hotkey or "")
+        )
+        notes_browser_hotkey_row = QHBoxLayout()
+        notes_browser_hotkey_row.addWidget(self.notes_browser_hotkey_edit)
+        self.notes_browser_hotkey_clear_button = QPushButton("Clear")
+        self.notes_browser_hotkey_clear_button.clicked.connect(self.notes_browser_hotkey_edit.clear)
+        notes_browser_hotkey_row.addWidget(self.notes_browser_hotkey_clear_button)
+        form.addRow(notes_browser_hotkey_row)
+
+        notes_browser_test_button = QPushButton("Test")
+        notes_browser_test_button.clicked.connect(self._test_notes_browser_hotkey)
+        form.addRow(notes_browser_test_button)
+
+        self.notes_browser_hotkey_status = QLabel("")
+        form.addRow(self.notes_browser_hotkey_status)
+
         return tab
 
     def _test_hotkey(self):
-        sequence = self.hotkey_edit.keySequence().toString()
+        self._test_hotkey_combo(
+            self.hotkey_edit,
+            self.hotkey_status,
+            self._settings.hotkey,
+            self.notes_browser_hotkey_edit,
+            "Notes Browser",
+        )
+
+    def _test_notes_browser_hotkey(self):
+        self._test_hotkey_combo(
+            self.notes_browser_hotkey_edit,
+            self.notes_browser_hotkey_status,
+            self._settings.notes_browser_hotkey,
+            self.hotkey_edit,
+            "New Note",
+        )
+
+    def _test_hotkey_combo(
+        self,
+        edit: QKeySequenceEdit,
+        status: QLabel,
+        current_value: str | None,
+        other_edit: QKeySequenceEdit,
+        other_label: str,
+    ):
+        sequence = edit.keySequence().toString()
         if not sequence:
-            self.hotkey_status.setText("Enter a key combination first")
+            status.setText("Enter a key combination first")
             return
         try:
             key, modifiers = parse_shortcut(sequence)
         except ValueError:
-            self.hotkey_status.setText("Invalid combination")
+            status.setText("Invalid combination")
             return
 
         # Testing the combo that's already this app's own live global
@@ -284,28 +335,45 @@ class SettingsDialog(QDialog):
         # another app" — technically true but misleading, since the
         # "other app" is this one. Skip the redundant self-conflicting
         # grab entirely rather than let it report a false conflict.
-        if (key, modifiers) == parse_shortcut(self._settings.hotkey):
-            self.hotkey_status.setText("This is already your current hotkey")
+        if current_value and (key, modifiers) == parse_shortcut(current_value):
+            status.setText("This is already your current hotkey")
             self._stop_test_listener()
             return
 
-        self.hotkey_status.setText("Testing…")
+        # Same idea, but against the *other* hotkey field in this same
+        # dialog rather than this field's own current value — covers both
+        # "matches the other hotkey's already-committed combo" (which
+        # NoteManager also still holds live while this dialog is open)
+        # and "matches what you just typed into the other field but
+        # haven't tested/saved yet" in one comparison, since either way
+        # this is what the other field's widget shows right now.
+        other_sequence = other_edit.keySequence().toString()
+        if other_sequence:
+            try:
+                if (key, modifiers) == parse_shortcut(other_sequence):
+                    status.setText(f"Same as the {other_label} hotkey — pick a different combination")
+                    self._stop_test_listener()
+                    return
+            except ValueError:
+                pass  # the other field's own invalid state isn't this check's concern
+
+        status.setText("Testing…")
         self._stop_test_listener()
         self._test_listener = HotkeyListener(key, modifiers)
-        self._test_listener.grab_succeeded.connect(self._on_test_success)
-        self._test_listener.grab_failed.connect(self._on_test_failed)
+        self._test_listener.grab_succeeded.connect(lambda: self._on_test_success(status))
+        self._test_listener.grab_failed.connect(lambda: self._on_test_failed(status))
         self._test_listener.start()
 
-    def _on_test_success(self):
+    def _on_test_success(self, status: QLabel):
         # The test grab is released immediately after checking (see
         # _stop_test_listener below), so this combo isn't actually reserved
         # yet — say so explicitly, since "Available" alone reads as if the
         # combo already works, when only clicking OK commits it.
-        self.hotkey_status.setText("✓ Available — click OK to use it")
+        status.setText("✓ Available — click OK to use it")
         self._stop_test_listener()
 
-    def _on_test_failed(self):
-        self.hotkey_status.setText("✗ Already in use by another app")
+    def _on_test_failed(self, status: QLabel):
+        status.setText("✗ Already in use by another app")
         self._stop_test_listener()
 
     def _stop_test_listener(self):
@@ -323,7 +391,13 @@ class SettingsDialog(QDialog):
             default_font_size=self.font_size_spin.value(),
             default_font_color=self._pending_font_color,
             launch_at_login=self.launch_at_login_check.isChecked(),
-            hotkey=self.hotkey_edit.keySequence().toString() or self._settings.hotkey,
+            # An empty field commits as None ("no hotkey"), not a
+            # fallback to the old value — the Clear button exists
+            # specifically so this is reachable; before it existed, a
+            # cleared-but-otherwise-untouched field had no way to mean
+            # anything other than "leave the old combo alone".
+            hotkey=self.hotkey_edit.keySequence().toString() or None,
+            notes_browser_hotkey=self.notes_browser_hotkey_edit.keySequence().toString() or None,
             spell_check_enabled=self.spell_check_check.isChecked(),
             # No UI for these (yet) — carry them through unchanged rather
             # than silently resetting them to their dataclass defaults,

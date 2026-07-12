@@ -33,7 +33,8 @@ SWATCHES = [
     "#b39ddb",  # deep purple / lavender
 ]
 DEFAULT_COLOR = SWATCHES[0]
-DEFAULT_HOTKEY = "Ctrl+Alt+N"
+DEFAULT_HOTKEY = "Meta+Alt+N"
+DEFAULT_NOTES_BROWSER_HOTKEY = "Meta+Alt+B"
 
 # Separate, darker palette for text color: the pastel SWATCHES above read
 # poorly as font color against the (also pastel) note backgrounds. Also
@@ -127,7 +128,12 @@ class Settings:
     default_font_size: int = 12
     default_font_color: str = "#000000"
     launch_at_login: bool = False
-    hotkey: str = DEFAULT_HOTKEY
+    # None means "no hotkey configured" (explicitly cleared via Settings'
+    # Clear button) — distinct from the non-None string default a fresh
+    # install starts with. Only ever becomes None through deliberate user
+    # action, never a fallback/unset-on-disk state.
+    hotkey: str | None = DEFAULT_HOTKEY
+    notes_browser_hotkey: str | None = DEFAULT_NOTES_BROWSER_HOTKEY
     spell_check_enabled: bool = False
 
     # None until the Notes Browser has actually been moved/resized once —
