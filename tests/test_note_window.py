@@ -3158,3 +3158,130 @@ def test_clicking_a_suggestion_replaces_the_word_in_place(qapp, monkeypatch):
     suggestion_action.trigger()
 
     assert win.body.toPlainText() == "hello world today"
+
+
+def test_context_menu_offers_ignore_and_add_to_dictionary_for_misspelled_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: ["world"])
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions()]
+    assert "Ignore" in titles
+    assert "Add to Dictionary" in titles
+
+
+def test_context_menu_omits_ignore_and_add_to_dictionary_for_correctly_spelled_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: True)
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello there</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(2)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+
+    titles = [a.text() for a in menu.actions()]
+    assert "Ignore" not in titles
+    assert "Add to Dictionary" not in titles
+
+
+def test_clicking_ignore_calls_spellcheck_ignore_with_the_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: [])
+    calls = []
+    monkeypatch.setattr(spellcheck, "ignore", lambda word: calls.append(word))
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    ignore_action = next(a for a in menu.actions() if a.text() == "Ignore")
+
+    ignore_action.trigger()
+
+    assert calls == ["wrold"]
+
+
+def test_clicking_add_to_dictionary_calls_spellcheck_add_to_dictionary_with_the_word(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: [])
+    calls = []
+    monkeypatch.setattr(spellcheck, "add_to_dictionary", lambda word: calls.append(word))
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    add_action = next(a for a in menu.actions() if a.text() == "Add to Dictionary")
+
+    add_action.trigger()
+
+    assert calls == ["wrold"]
+
+
+def test_ignoring_a_word_rehighlights_every_open_note_with_that_word(qapp, monkeypatch):
+    """Ignoring/adding a word changes what spellcheck.check() returns
+    globally, not just for the note the right-click happened in — every
+    open note's highlighter needs to re-run so an already-underlined
+    instance elsewhere clears immediately too."""
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    words_ok = set()
+
+    def fake_check(word):
+        return word != "wrold" or word in words_ok
+
+    monkeypatch.setattr(spellcheck, "check", fake_check)
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: [])
+
+    def fake_ignore(word):
+        words_ok.add(word)
+
+    monkeypatch.setattr(spellcheck, "ignore", fake_ignore)
+
+    class _NotesManager(_SpellCheckManager):
+        def __init__(self):
+            super().__init__(spell_check_enabled=True)
+            self.notes = {}
+
+    manager = _NotesManager()
+    win1 = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    win2 = NoteWindow(Note(html="<p>wrold again</p>"), manager=manager)
+    manager.notes = {win1.note.id: win1, win2.note.id: win2}
+    qapp.processEvents()
+
+    block2 = win2.body.document().findBlockByNumber(0)
+    assert any(f.start == 0 for f in block2.layout().formats())  # "wrold" underlined in win2
+
+    caret = win1.body.textCursor()
+    caret.setPosition(8)  # inside win1's "wrold"
+    win1.body.setTextCursor(caret)
+    menu = QMenu()
+    win1.populate_text_menu(menu)
+    ignore_action = next(a for a in menu.actions() if a.text() == "Ignore")
+    ignore_action.trigger()
+    qapp.processEvents()
+
+    block2_after = win2.body.document().findBlockByNumber(0)
+    assert block2_after.layout().formats() == []  # win2's "wrold" cleared too

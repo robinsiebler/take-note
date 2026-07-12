@@ -2268,6 +2268,12 @@ class NoteWindow(QWidget):
                 action.triggered.connect(
                     lambda checked=False, s=suggestion, st=start, e=end, b=block: self._replace_word(b, st, e, s)
                 )
+
+        ignore_action = menu.addAction("Ignore")
+        ignore_action.triggered.connect(lambda checked=False, w=word: self._ignore_word(w))
+        add_action = menu.addAction("Add to Dictionary")
+        add_action.triggered.connect(lambda checked=False, w=word: self._add_word_to_dictionary(w))
+
         menu.addSeparator()
 
     def _replace_word(self, block, start: int, end: int, replacement: str):
@@ -2276,6 +2282,26 @@ class NoteWindow(QWidget):
         cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
         cursor.insertText(replacement)
         self.mark_changed()
+
+    def _ignore_word(self, word: str):
+        spellcheck.ignore(word)
+        self._rehighlight_open_notes()
+
+    def _add_word_to_dictionary(self, word: str):
+        spellcheck.add_to_dictionary(word)
+        self._rehighlight_open_notes()
+
+    def _rehighlight_open_notes(self):
+        """Ignoring/adding a word changes what spellcheck.check() returns
+        for every open note, not just this one — re-run each note's
+        highlighter so already-underlined instances of the word clear
+        immediately instead of waiting for the next edit near them.
+        getattr(..., {}) rather than self.manager.notes directly: same
+        duck-typed fallback BoardCanvas.grow_to_fit() already relies on,
+        since test doubles for `manager` don't define `.notes`."""
+        for note_window in getattr(self.manager, "notes", {}).values():
+            if note_window.spell_highlighter is not None:
+                note_window.spell_highlighter.rehighlight()
 
     def populate_text_menu(self, menu: QMenu):
         """Text-formatting actions (font style/color, bullets & numbering,

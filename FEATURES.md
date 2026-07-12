@@ -19,7 +19,9 @@
   "Remove Hyperlink" strips a link back to plain text.
 - Spell check (optional, off by default — see below): a red squiggly
   underline under misspelled words as you type, with suggested
-  corrections in the right-click menu.
+  corrections in the right-click menu, plus "Ignore" (this session only)
+  and "Add to Dictionary" (persists across restarts) for words that
+  aren't actually misspelled.
 - Right-click the note body for text-formatting actions only; whole-note
   actions (color, transparency, always-on-top, Notepad, delete, hide)
   live in the header's right-click menu and the hamburger (☰) button
