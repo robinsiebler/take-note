@@ -10,7 +10,8 @@ searchable Notes Manager with free-form tags, Notepads (shared
 corkboards), Lock Note, in-note Find, optional spell check, and a
 system tray for quick actions.
 
-See [FEATURES.md](FEATURES.md) for the full, detailed list.
+See [FEATURES.md](FEATURES.md) for the full, detailed list, and
+[CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Setup
 
