@@ -70,6 +70,25 @@ TRANSPARENCY_LEVELS = [
     ("Full", 0.40),
 ]
 
+# Named size presets for new notes/notepads, each (label, width, height).
+# "Small" matches each dataclass's own pre-existing default below, so a
+# fresh install (or a Settings predating these fields) behaves exactly as
+# before. Notes and Notepads get separate preset lists, scaled from their
+# own current default rather than sharing one list, since a good notepad
+# size is much larger than a good note size.
+NOTE_SIZE_PRESETS = [
+    ("Small", 220, 220),
+    ("Medium", 300, 300),
+    ("Large", 400, 400),
+    ("Extra Large", 500, 500),
+]
+NOTEPAD_SIZE_PRESETS = [
+    ("Small", 400, 300),
+    ("Medium", 600, 450),
+    ("Large", 800, 600),
+    ("Extra Large", 1000, 750),
+]
+
 
 @dataclass
 class Note:
@@ -132,6 +151,13 @@ class Settings:
     default_always_on_top: bool = True
     default_font_size: int = 12
     default_font_color: str = "#000000"
+    # Matches NOTE_SIZE_PRESETS/NOTEPAD_SIZE_PRESETS' own "Small" entry —
+    # a fresh install (or a Settings predating these fields) creates notes
+    # and notepads at exactly the size they always defaulted to.
+    default_note_w: int = 220
+    default_note_h: int = 220
+    default_notepad_w: int = 400
+    default_notepad_h: int = 300
     launch_at_login: bool = False
     # None means "no hotkey configured" (explicitly cleared via Settings'
     # Clear button) — distinct from the non-None string default a fresh
