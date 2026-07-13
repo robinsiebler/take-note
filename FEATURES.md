@@ -51,6 +51,16 @@
   Browser's **Trash** node (always present, next to Tags) is the only
   place to **Restore** a note or **Delete Permanently** — real,
   irreversible deletion is no longer reachable anywhere else.
+- Reminders: set a one-shot reminder on any note (hamburger ☰ menu's
+  "Set Reminder…"/"Edit Reminder…", a date/time picker that won't let
+  you pick a past time) — a bell icon appears in the header while one's
+  set, with a tooltip showing when it's due. When it comes due, the
+  note raises itself to the front (unrolling or restoring it first if
+  needed), then clears itself — no repeat/recurrence, no desktop
+  notification. A reminder missed while the app was closed fires
+  immediately on the next launch; one on a trashed note is skipped
+  rather than fired, and doesn't fire later just because the note is
+  restored.
 - Tags: free-form, per-note tags (no predefined list) assigned via the
   hamburger (☰) menu's "Tags…" dialog. Visible and filterable in the
   Notes Manager, plus a small ribbon icon in the note's own header

@@ -10,8 +10,8 @@ A sticky notes app for Linux (Python + PySide6/Qt6).
 Colored, resizable sticky notes with rich text (fonts, colors, bullets &
 numbering, hyperlinks, embedded images), a global new-note hotkey, a
 searchable Notes Manager with free-form tags, Notepads (shared
-corkboards), Lock Note, in-note Find, optional spell check, and a
-system tray for quick actions.
+corkboards), Lock Note, in-note Find, one-shot Reminders, optional
+spell check, and a system tray for quick actions.
 
 See [FEATURES.md](FEATURES.md) for the full, detailed list, and
 [CHANGELOG.md](CHANGELOG.md) for release history.
@@ -127,7 +127,6 @@ Browser, tags, and a manual test plan under `test_cases/`) is done — see
 Features above rather than re-deriving it from history here.
 
 **Still open, lower priority:**
-- Reminders / alarms (needs a real notification/alarm subsystem)
 - Interactive checklists inside notes (needs a custom `QTextObjectInterface`,
   unlike bullets/numbering above)
 - Note-color/font-color picker popup: corners and border are already
@@ -146,6 +145,9 @@ Features above rather than re-deriving it from history here.
 - Thumbnail + open-full-size for oversized embedded pictures
 - Tray menu separators render as plain gaps (KDE's native tray menu
   protocol doesn't pick up the app's own stylesheet — no clean fix found)
+- Reminders: an optional sound/audio alert when one fires (currently
+  visual-only — raising the note itself), and a Notes Manager column
+  showing when a note's reminder will fire
 
 **Distant future, not scoped:** cloud sync, note "skins" / a Markdown
 editing mode.
