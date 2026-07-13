@@ -233,12 +233,20 @@ class NotepadWindow(QWidget):
             self.mark_changed()
 
     def confirm_delete(self):
-        reply = QMessageBox.question(
-            self,
-            "Delete Notepad",
-            "Delete this Notepad? Notes on it will be moved back to the desktop.",
-            QMessageBox.Yes | QMessageBox.No,
-        )
+        # A plain child dialog doesn't reliably outrank an always-on-top
+        # note's own raw EWMH state in KWin's stacking layers (that hint
+        # elevates by window layer, not just parent/child order) — reported
+        # live: this dialog appeared behind the notes previously on this
+        # board. Same fix as NoteWindow.confirm_delete(): a parentless
+        # QMessageBox with WindowStaysOnTopHint explicitly set, since that
+        # (not parent/child stacking) is what actually keeps it above an
+        # always-on-top note regardless.
+        box = QMessageBox()
+        box.setWindowTitle("Delete Notepad")
+        box.setText("Delete this Notepad? Notes on it will be moved back to the desktop.")
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.setWindowFlags(box.windowFlags() | Qt.WindowStaysOnTopHint)
+        reply = box.exec()
         if reply == QMessageBox.Yes:
             self.manager.delete_board(self)
 
