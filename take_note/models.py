@@ -113,6 +113,12 @@ class Note:
     # note goes right back to whichever board it came from (or stays
     # unfiled if it never had one). Set only via NoteManager.trash_note().
     deleted_at: str | None = None
+    # None means no reminder is set. Cleared back to None the instant the
+    # reminder fires (see NoteManager._fire_reminder) — one-shot only, no
+    # repeat/recurrence. A trashed note's reminder is skipped rather than
+    # fired (see NoteManager._check_reminders), not re-armed just because
+    # the note is later restored.
+    reminder_at: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

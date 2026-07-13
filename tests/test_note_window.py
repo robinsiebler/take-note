@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import QEvent, QObject, QPointF, QTimer, Qt, Signal
+from PySide6.QtCore import QDateTime, QEvent, QObject, QPointF, QTimer, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QDesktopServices,
@@ -16,6 +17,7 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QFontDialog,
     QInputDialog,
@@ -28,7 +30,8 @@ from PySide6.QtWidgets import (
 
 from take_note.models import Board, Note, Settings
 from take_note import spellcheck
-from take_note.note_window import NoteWindow, _detect_url_span, find_bar_tint
+from take_note.note_window import NoteWindow, _detect_url_span, _ReminderDialog, find_bar_tint
+from take_note.reminders import local_datetime_to_utc_iso
 
 
 class FakeManager:
@@ -709,6 +712,7 @@ def test_note_actions_menu_excludes_text_formatting(qapp):
     titles = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert titles == [
         "Add Title…",
+        "Set Reminder…",
         "Tags…",
         "Change Note Color…",
         "Note Transparency",
@@ -1257,6 +1261,110 @@ def test_show_tags_dialog_cancelled_does_not_change_tags(qapp, monkeypatch):
     win.show_tags_dialog()
 
     assert win.note.tags == ["work"]
+
+
+def _patch_reminder_dialog(monkeypatch, local_dt, result):
+    """_ReminderDialog is this app's own QDialog subclass (same family as
+    QMessageBox/QInputDialog, both already confirmed patchable at the
+    class level — unlike QMenu.exec, which Shiboken silently no-ops on).
+    Setting date_time_edit inside the patched exec() (rather than before
+    calling show_reminder_dialog()) is necessary since the real instance
+    only exists once show_reminder_dialog() constructs it."""
+
+    def fake_exec(self):
+        if local_dt is not None:
+            self.date_time_edit.setDateTime(QDateTime(local_dt))
+        return result
+
+    monkeypatch.setattr(_ReminderDialog, "exec", fake_exec)
+
+
+def test_show_reminder_dialog_sets_reminder_and_shows_icon(qapp, monkeypatch):
+    win = make_note_window("Some text")
+    future = datetime.now() + timedelta(hours=2)
+    _patch_reminder_dialog(monkeypatch, future, QDialog.Accepted)
+
+    win.show_reminder_dialog()
+
+    # Expected value round-tripped through QDateTime too, same as the
+    # dialog itself does — QDateTime only retains millisecond precision,
+    # not microseconds, so comparing against the raw `future` directly
+    # would fail on the sub-millisecond digits.
+    expected = local_datetime_to_utc_iso(QDateTime(future).toPython())
+    assert win.note.reminder_at == expected
+    assert not win.header.reminder_btn.isHidden()
+
+
+def test_show_reminder_dialog_cancelled_does_not_change_reminder(qapp, monkeypatch):
+    existing = local_datetime_to_utc_iso(datetime.now() + timedelta(hours=1))
+    win = NoteWindow(Note(reminder_at=existing), manager=FakeManager())
+    _patch_reminder_dialog(monkeypatch, datetime.now() + timedelta(hours=5), QDialog.Rejected)
+
+    win.show_reminder_dialog()
+
+    assert win.note.reminder_at == existing
+
+
+def test_show_reminder_dialog_clear_clears_reminder_and_hides_icon(qapp, monkeypatch):
+    existing = local_datetime_to_utc_iso(datetime.now() + timedelta(hours=1))
+    win = NoteWindow(Note(reminder_at=existing), manager=FakeManager())
+    _patch_reminder_dialog(monkeypatch, None, _ReminderDialog.Cleared)
+
+    win.show_reminder_dialog()
+
+    assert win.note.reminder_at is None
+    assert win.header.reminder_btn.isHidden()
+
+
+def test_show_reminder_dialog_prefills_existing_reminder(qapp, monkeypatch):
+    existing_local = datetime.now() + timedelta(hours=3)
+    existing_iso = local_datetime_to_utc_iso(existing_local)
+    win = NoteWindow(Note(reminder_at=existing_iso), manager=FakeManager())
+    seen = {}
+
+    def fake_exec(self):
+        seen["prefilled"] = self.date_time_edit.dateTime().toPython()
+        return QDialog.Rejected
+
+    monkeypatch.setattr(_ReminderDialog, "exec", fake_exec)
+
+    win.show_reminder_dialog()
+
+    # Compare at second precision — QDateTime doesn't retain microseconds.
+    assert seen["prefilled"].replace(microsecond=0) == existing_local.replace(microsecond=0)
+
+
+def test_reminder_action_label_is_edit_when_a_reminder_is_set(qapp):
+    win = NoteWindow(
+        Note(reminder_at=local_datetime_to_utc_iso(datetime.now() + timedelta(hours=1))),
+        manager=FakeManager(),
+    )
+    menu = QMenu()
+
+    win.populate_note_actions_menu(menu)
+
+    titles = [a.text() for a in menu.actions()]
+    assert "Edit Reminder…" in titles
+    assert "Set Reminder…" not in titles
+
+
+def test_update_reminder_indicator_shows_tooltip_with_local_time(qapp):
+    win = make_note_window()
+    reminder_at = local_datetime_to_utc_iso(datetime(2026, 3, 5, 14, 30))
+
+    win.header.update_reminder_indicator(reminder_at)
+
+    assert not win.header.reminder_btn.isHidden()
+    assert "Reminder:" in win.header.reminder_btn.toolTip()
+
+
+def test_update_reminder_indicator_hides_for_no_reminder(qapp):
+    win = make_note_window()
+    win.header.update_reminder_indicator(local_datetime_to_utc_iso(datetime.now() + timedelta(hours=1)))
+
+    win.header.update_reminder_indicator(None)
+
+    assert win.header.reminder_btn.isHidden()
 
 
 def test_header_tag_indicator_hidden_for_untagged_note(qapp):

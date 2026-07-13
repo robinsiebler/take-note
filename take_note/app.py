@@ -13,8 +13,10 @@ from .hotkey import HotkeyListener, parse_shortcut
 from .models import SWATCHES, Board, Note, Settings
 from .note_window import NoteWindow
 from .notes_manager import NotesManagerWindow
+from .reminders import is_reminder_due
 from .settings_dialog import SettingsDialog
 from .tray import TrayIcon
+from .x11_wm import set_stays_on_top
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,10 @@ def _now_iso() -> str:
 
 SAVE_DEBOUNCE_MS = 800
 CASCADE_OFFSET = 24
+REMINDER_CHECK_INTERVAL_MS = 30_000
+# How long a fired reminder is forced above other windows before dropping
+# back to the note's own real Always-on-Top setting (see _fire_reminder).
+REMINDER_FLASH_DURATION_MS = 10_000
 
 
 class NoteManager(QObject):
@@ -63,6 +69,16 @@ class NoteManager(QObject):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(SAVE_DEBOUNCE_MS)
         self._save_timer.timeout.connect(self._save_now)
+
+        # Unlike _save_timer above, a repeating (not singleShot) timer —
+        # the first one in this class. Polls for due reminders; 30s costs
+        # nothing (an in-memory dict scan + string comparisons, no I/O)
+        # and keeps a one-shot reminder feeling prompt rather than lagging
+        # up to a full minute behind the time the user actually picked.
+        self._reminder_timer = QTimer(self)
+        self._reminder_timer.setInterval(REMINDER_CHECK_INTERVAL_MS)
+        self._reminder_timer.timeout.connect(self._check_reminders)
+        self._reminder_timer.start()
 
         self.tray = TrayIcon(self)
         self.tray.show()
@@ -115,6 +131,15 @@ class NoteManager(QObject):
             self._new_note_cascade_offset = (standalone_count * CASCADE_OFFSET) % (
                 CASCADE_OFFSET * 10
             )
+
+        # Every NoteWindow now exists and is wired into self.notes — the
+        # earliest point that's true (unlike __init__, which runs before
+        # any note windows are constructed at all). Catches a reminder
+        # that came due while the app was closed and fires it immediately,
+        # per explicit user call — same method the repeating timer uses,
+        # so "missed while closed" and "came due while running" share one
+        # code path.
+        self._check_reminders()
 
     def _wire_note(self, note_window: NoteWindow):
         self.notes[note_window.note.id] = note_window
@@ -456,6 +481,65 @@ class NoteManager(QObject):
         boards = [bw.sync_model() for bw in self.boards.values()]
         storage.save_all(notes, boards, self.settings)
 
+    # -- reminders -----------------------------------------------------
+
+    def _check_reminders(self):
+        now = datetime.now(timezone.utc)
+        for note_window in list(self.notes.values()):
+            note = note_window.note
+            if note.deleted_at is not None:
+                # Trashed — stays hidden regardless. Skipped rather than
+                # fired, and not re-armed later just because the note
+                # gets restored (per explicit user call).
+                continue
+            if note.reminder_at is not None and is_reminder_due(note.reminder_at, now):
+                self._fire_reminder(note_window)
+
+    def _fire_reminder(self, note_window: NoteWindow):
+        # Clear + update the icon before raising, so the note's own state
+        # is already consistent even if raising triggers any reentrancy.
+        # Manager-side automatic action, not a user edit (same convention
+        # as trash_note()/restore_note() above) — schedules a save
+        # directly rather than going through note_window.mark_changed(),
+        # which would incorrectly bump modified_at for something the user
+        # didn't actually edit.
+        note_window.note.reminder_at = None
+        note_window.header.update_reminder_indicator(None)
+        # set_rolled(False) — a rolled-up note is just resized to its
+        # header strip, not a Qt window state, so showNormal() below
+        # can't recover it; a rolled-up reminder note showing only its
+        # colored header bar with no visible content would be a weak
+        # notification. No-op (and no mark_changed()) if already unrolled.
+        note_window.set_rolled(False)
+        # showNormal() before raise_()/activateWindow() — same fix as
+        # open_notes_manager()/_open_selected_note(): show() alone can't
+        # recover a genuinely minimized (window-manager-iconified) note.
+        note_window.showNormal()
+        note_window.raise_()
+        note_window.activateWindow()
+        # Confirmed live: the three calls above are silently denied by
+        # KWin's focus-stealing prevention when triggered from this
+        # background timer rather than a direct user click — a note
+        # actually hidden behind other windows never came to front, with
+        # no taskbar entry to fall back on either (notes always
+        # skip_taskbar). Forcing the EWMH "above" state instead is a
+        # stacking-order change, not a focus/activation request, so it
+        # isn't subject to the same restriction — same mechanism the real
+        # Always-on-Top toggle already uses (set_always_on_top). Only
+        # applies to standalone notes; a board-attached note is a plain
+        # child widget with no top-level window/WM state of its own, and
+        # its raise_() above already reorders it within the board canvas.
+        # Reverted after a short flash so a note the user didn't actually
+        # mark Always-on-Top doesn't stay pinned above everything
+        # indefinitely.
+        if note_window.note.board_id is None and not note_window.note.always_on_top:
+            win_id = int(note_window.winId())
+            set_stays_on_top(win_id, True)
+            QTimer.singleShot(
+                REMINDER_FLASH_DURATION_MS, lambda: set_stays_on_top(win_id, False)
+            )
+        self._schedule_save()
+
     # -- lifecycle ---------------------------------------------------------
 
     def _on_hotkey_failed(self, name: str):
@@ -474,6 +558,7 @@ class NoteManager(QObject):
             self.bring_all_notes_to_front_hotkey.stop()
         for note_window in self.notes.values():
             note_window._clear_window_watcher()
+        self._reminder_timer.stop()
         self._save_timer.stop()
         self._save_now()
 
