@@ -2215,6 +2215,22 @@ class NoteWindow(QWidget):
         self.note.modified_at = _now_iso()
         self.changed.emit()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.note.board_id is None:
+            # Re-asserts the taskbar-skip hint on every show(), not just at
+            # construction. Reported live: sticking a note to a window
+            # (WindowWatcher's minimized/restored signals just call
+            # self.hide/self.show — see __init__ above) or toggling Show/
+            # Hide All Notes eventually left the note showing up in the
+            # taskbar — with the same Vorta-icon KDE mislabeling bug
+            # already worked around elsewhere — until the app was
+            # restarted. attach_to_board's detach branch already knew a
+            # *reparent* recreates the native window and re-applies this
+            # for that reason; a plain hide()/show() cycle on an otherwise
+            # untouched window turns out to need the same re-assertion.
+            set_skip_taskbar(int(self.winId()), True)
+
     def moveEvent(self, event):
         super().moveEvent(event)
         self.mark_changed()

@@ -739,6 +739,49 @@ def test_hide_note_action_hides_the_window(qapp):
     assert win.isHidden()
 
 
+def test_showing_a_note_again_reasserts_skip_taskbar(qapp, monkeypatch):
+    """Regression, reported live: sticking a note to a window (whose
+    minimize/restore just calls hide()/show() — see WindowWatcher wiring
+    in __init__) or toggling Show/Hide All Notes eventually left the note
+    showing up in the taskbar, with the same Vorta-icon KDE mislabeling
+    bug already worked around elsewhere, until the app was restarted.
+    set_skip_taskbar was only ever applied once, at construction, never
+    reapplied on a later show() — same root cause attach_to_board's
+    detach branch already knew to guard against for reparenting, just
+    via a different trigger (a plain hide()/show() cycle)."""
+    calls = []
+    monkeypatch.setattr(
+        "take_note.note_window.set_skip_taskbar",
+        lambda win_id, enabled: calls.append((win_id, enabled)),
+    )
+    win = make_note_window()
+    calls.clear()  # construction's own initial call isn't what's under test
+
+    win.hide()
+    win.show()
+
+    assert calls == [(int(win.winId()), True)]
+
+
+def test_showing_a_board_attached_note_does_not_touch_skip_taskbar(qapp, monkeypatch):
+    """A board-attached note is a plain child widget (Qt.Widget), not a
+    real top-level window, so it never has its own taskbar entry to skip
+    — matches the same board_id is None guard construction already uses."""
+    calls = []
+    monkeypatch.setattr(
+        "take_note.note_window.set_skip_taskbar",
+        lambda win_id, enabled: calls.append((win_id, enabled)),
+    )
+    win = make_note_window()
+    win.note.board_id = "some-board-id"
+    calls.clear()
+
+    win.hide()
+    win.show()
+
+    assert calls == []
+
+
 def test_note_with_deleted_at_constructs_hidden(qapp):
     win = NoteWindow(Note(deleted_at="2026-01-01T00:00:00+00:00"), manager=FakeManager())
 

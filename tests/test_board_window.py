@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
-from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
 
 from take_note.board_window import NotepadWindow
 from take_note.models import Board, Note, Settings
@@ -417,3 +417,25 @@ def test_header_new_note_button_creates_standalone_note_for_unattached_note(qapp
         FakeManager.create_note = original_create_note
 
     assert created["board"] is None
+
+
+def test_confirm_delete_dialog_stays_on_top_of_always_on_top_notes(qapp, monkeypatch):
+    """Regression, reported live: a plain child QMessageBox doesn't
+    reliably outrank an always-on-top note's own raw EWMH state in KWin's
+    stacking layers — the confirmation dialog appeared behind the notes
+    previously on this board. Same fix as NoteWindow.confirm_delete():
+    WindowStaysOnTopHint explicitly set, since that (not parent/child
+    stacking) is what actually keeps a dialog above an always-on-top
+    window regardless."""
+    board = NotepadWindow(Board(), FakeManager())
+    seen = {}
+
+    def fake_exec(self):
+        seen["flags"] = self.windowFlags()
+        return QMessageBox.No
+
+    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
+
+    board.confirm_delete()
+
+    assert seen["flags"] & Qt.WindowStaysOnTopHint
