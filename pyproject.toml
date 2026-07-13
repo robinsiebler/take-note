@@ -25,4 +25,10 @@ packages = ["take_note"]
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-cov",
+    "ruff",
+    "genbadge[coverage]",
 ]
+
+[tool.ruff]
+target-version = "py310"

@@ -1,5 +1,8 @@
 # Take Note!
 
+[![CI](https://github.com/robinsiebler/take-note/actions/workflows/ci.yml/badge.svg)](https://github.com/robinsiebler/take-note/actions/workflows/ci.yml)
+![Coverage](https://raw.githubusercontent.com/robinsiebler/take-note/coverage-badge/coverage.svg)
+
 A sticky notes app for Linux (Python + PySide6/Qt6).
 
 ## Features

@@ -7,6 +7,22 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check .
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -66,3 +82,65 @@ jobs:
           python -m venv /tmp/take-note-build-check
           /tmp/take-note-build-check/bin/pip install dist/*.whl
           /tmp/take-note-build-check/bin/python -c "import take_note"
+
+  coverage:
+    # Only on a real push to main, not PRs (a fork's PR run has no push
+    # access to commit the badge back) or tag pushes (a tag always
+    # points at an already-measured main commit, so re-measuring and
+    # re-committing there would be redundant).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Qt runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6
+
+      - name: Install dependencies
+        run: pip install -e . pytest pytest-cov "genbadge[coverage]"
+
+      - name: Run tests with coverage
+        run: pytest --cov=take_note --cov-report=xml
+
+      - name: Generate coverage badge
+        run: genbadge coverage -i coverage.xml -o coverage.svg
+
+      # No third-party badge service — the badge itself is generated
+      # entirely above, from this run's own coverage.xml. This step just
+      # publishes that static SVG somewhere the README's <img> tag can
+      # point at, via a dedicated orphan branch (kept separate from
+      # main's own history, which otherwise has nothing to do with a
+      # generated binary asset).
+      - name: Commit badge to the coverage-badge branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Move the freshly-generated badge out of the working tree
+          # before switching branches below — if coverage-badge already
+          # exists with its own tracked coverage.svg, checking it out
+          # while an untracked coverage.svg from this run is still
+          # sitting in the working tree would fail (git refuses to
+          # overwrite untracked files on checkout).
+          mv coverage.svg /tmp/coverage.svg
+          git fetch origin coverage-badge --depth=1 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/coverage-badge; then
+            git checkout coverage-badge
+          else
+            git checkout --orphan coverage-badge
+          fi
+          git rm -rf . >/dev/null 2>&1 || true
+          mv /tmp/coverage.svg coverage.svg
+          git add coverage.svg
+          git diff --cached --quiet && echo "coverage unchanged, nothing to commit" || git commit -m "Update coverage badge"
+          git push origin coverage-badge
