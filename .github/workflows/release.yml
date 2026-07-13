@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Qt runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6
+
+      - name: Install dependencies
+        run: pip install -e . pytest build
+
+      - name: Run tests
+        run: pytest
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      # CHANGELOG.md is the single source of truth for release notes —
+      # write the version's entry there as part of the normal release
+      # PR, and this becomes the GitHub Release body verbatim, instead
+      # of writing the same notes twice by hand in two different places.
+      - name: Extract this version's CHANGELOG section
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            BEGIN { found = 0 }
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") { found = 1; next }
+              next
+            }
+            found { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "No CHANGELOG.md section found for [$version] — add one before tagging." >&2
+            exit 1
+          fi
+
+      # Idempotent: if a release for this tag already exists (e.g.
+      # created by hand before this workflow ran), just attach the
+      # freshly-built artifacts to it rather than failing or duplicating.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+          fi
