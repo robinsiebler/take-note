@@ -3,6 +3,26 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-07-13
+
+### Added
+- Reminders: set a one-shot reminder on any note (☰ → Set/Edit
+  Reminder…) with a date/time picker; a header bell icon shows when
+  one's set. When it comes due, the note raises itself to the front
+  (unrolling/restoring it if needed) — no desktop notification, no
+  repeat. A reminder missed while the app was closed fires immediately
+  on next launch; a reminder on a trashed note is skipped, not fired.
+
+### Fixed
+- A fired reminder could fail to visibly raise its note at all when
+  the note wasn't Always-on-Top and was buried behind other windows —
+  KWin's focus-stealing prevention silently denied the raise/activate
+  request since it came from a background timer, not a direct click.
+- A note stuck to another window could still briefly flash into the
+  taskbar (with the same Vorta-icon mislabeling worked around
+  elsewhere) during rapid minimize/restore cycling, even with the
+  existing taskbar-hidden reassertion in place.
+
 ## [1.2.0] - 2026-07-13
 
 ### Added
@@ -61,6 +81,7 @@ First tagged release. Highlights:
 - System tray for quick actions (new note/board, Notes Browser,
   Settings, bulk show/hide/roll).
 
+[1.3.0]: https://github.com/robinsiebler/take-note/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/robinsiebler/take-note/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/robinsiebler/take-note/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/robinsiebler/take-note/releases/tag/v1.0.0
