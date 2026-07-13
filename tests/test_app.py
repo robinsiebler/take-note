@@ -213,6 +213,15 @@ def test_create_note_uses_random_color_when_randomizing(qapp, monkeypatch):
     assert note_window.note.color != "#a5d6a7"
 
 
+def test_create_note_uses_the_configured_default_size(qapp):
+    settings = Settings(default_note_w=400, default_note_h=500)
+    manager = _fake_manager_for_create_note(settings)
+
+    note_window = NoteManager.create_note(manager)
+
+    assert (note_window.note.w, note_window.note.h) == (400, 500)
+
+
 def test_create_note_staggers_each_standalone_note_from_the_last(qapp):
     """Regression: every new standalone note used to appear at the exact
     same fixed default position, giving no visible sign a new note was
@@ -253,6 +262,16 @@ def test_create_note_on_a_board_does_not_apply_the_cascade_offset(qapp):
 
     assert (note_window.note.x, note_window.note.y) == (20, 20)
     assert manager._new_note_cascade_offset == 24  # unchanged
+
+
+def test_create_board_uses_the_configured_default_size(qapp):
+    settings = Settings(default_notepad_w=800, default_notepad_h=600)
+    manager = _fake_manager_for_create_note(settings)
+    manager.boards = {}
+
+    board_window = NoteManager.create_board(manager)
+
+    assert (board_window.board.w, board_window.board.h) == (800, 600)
 
 
 def test_load_from_disk_seeds_cascade_offset_from_standalone_note_count(qapp, monkeypatch):

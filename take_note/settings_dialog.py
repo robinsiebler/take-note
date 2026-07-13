@@ -4,6 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -21,7 +22,13 @@ from PySide6.QtWidgets import (
 
 from . import spellcheck
 from .hotkey import HotkeyListener, parse_shortcut
-from .models import FONT_SWATCHES, SWATCHES, Settings
+from .models import (
+    FONT_SWATCHES,
+    NOTE_SIZE_PRESETS,
+    NOTEPAD_SIZE_PRESETS,
+    SWATCHES,
+    Settings,
+)
 from .widgets import build_color_swatch_grid
 
 
@@ -140,6 +147,16 @@ class SettingsDialog(QDialog):
         self.always_on_top_check.setChecked(self._settings.default_always_on_top)
         form.addRow(self.always_on_top_check)
 
+        self.note_size_combo = self._build_size_combo(
+            NOTE_SIZE_PRESETS, self._settings.default_note_w, self._settings.default_note_h
+        )
+        form.addRow("Default note size:", self.note_size_combo)
+
+        self.notepad_size_combo = self._build_size_combo(
+            NOTEPAD_SIZE_PRESETS, self._settings.default_notepad_w, self._settings.default_notepad_h
+        )
+        form.addRow("Default notepad size:", self.notepad_size_combo)
+
         form.addRow(QLabel("Default note color:"))
         self._color_grid_layout = QVBoxLayout()
         self._color_grid_layout.addWidget(
@@ -221,6 +238,24 @@ class SettingsDialog(QDialog):
             form.addRow(unavailable_label)
 
         return tab
+
+    def _build_size_combo(
+        self, presets: list[tuple[str, int, int]], current_w: int, current_h: int
+    ) -> QComboBox:
+        combo = QComboBox()
+        # Matched by hand while building the combo, not QComboBox.findData()
+        # afterward — findData()'s equality check doesn't reliably match a
+        # plain Python tuple stored as itemData under PySide6, so it always
+        # returned -1 in practice, silently leaving the combo on "Small"
+        # regardless of the real setting (caught via a failing test before
+        # this ever reached a real Settings dialog).
+        matched_index = 0
+        for i, (label, w, h) in enumerate(presets):
+            combo.addItem(f"{label} ({w}×{h})", (w, h))
+            if (w, h) == (current_w, current_h):
+                matched_index = i
+        combo.setCurrentIndex(matched_index)
+        return combo
 
     def _on_pick_default_color(self, color: str):
         self._pending_color = color
@@ -503,6 +538,10 @@ class SettingsDialog(QDialog):
             default_color=self._pending_color,
             randomize_new_note_color=self.randomize_color_check.isChecked(),
             default_always_on_top=self.always_on_top_check.isChecked(),
+            default_note_w=self.note_size_combo.currentData()[0],
+            default_note_h=self.note_size_combo.currentData()[1],
+            default_notepad_w=self.notepad_size_combo.currentData()[0],
+            default_notepad_h=self.notepad_size_combo.currentData()[1],
             default_font_size=self.font_size_spin.value(),
             default_font_color=self._pending_font_color,
             launch_at_login=self.launch_at_login_check.isChecked(),

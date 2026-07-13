@@ -57,18 +57,20 @@
   (next to the lock icon) whenever it has at least one tag — hover it
   for the full tag list, click it to open the Tags… dialog directly.
 - Settings dialog (tray → Settings…): launch at login, default note
-  color/font size/color, whether new notes start always-on-top, optional
-  spell check, and a hotkey recorder (one for each global hotkey above,
-  each with its own Clear button to unbind it entirely) that live-tests
-  a combo for conflicts — with this app's own other live hotkeys, or
-  anything else already holding it — before committing to it. The
-  Hotkey tab scrolls rather than growing the whole dialog to fit, and
-  starts with a note that a combo already grabbed by a system-level
-  shortcut (KWin's own global shortcuts, etc.) won't register in the
-  field at all — not something the app can reliably detect ahead of
-  time. Has Apply (try a setting without closing the dialog) alongside
-  OK/Cancel, and
-  remembers its own window position across restarts.
+  color/font size/color, default note/notepad size (Small/Medium/Large/
+  Extra Large presets — only applies to newly created notes/notepads,
+  existing ones are unaffected), whether new notes start always-on-top,
+  optional spell check, and a hotkey recorder (one for each global
+  hotkey above, each with its own Clear button to unbind it entirely)
+  that live-tests a combo for conflicts — with this app's own other
+  live hotkeys, or anything else already holding it — before
+  committing to it. The Hotkey tab scrolls rather than growing the
+  whole dialog to fit, and starts with a note that a combo already
+  grabbed by a system-level shortcut (KWin's own global shortcuts,
+  etc.) won't register in the field at all — not something the app
+  can reliably detect ahead of time. Has Apply (try a setting without
+  closing the dialog) alongside OK/Cancel, and remembers its own
+  window position across restarts.
 - Notepads: group notes onto a shared corkboard-style window that shows,
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark

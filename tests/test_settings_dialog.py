@@ -25,6 +25,35 @@ def test_result_settings_reflects_changed_font_size(qapp):
     assert result.default_font_size == 20
 
 
+def test_dialog_initializes_note_and_notepad_size_from_settings(qapp):
+    settings = Settings(default_note_w=400, default_note_h=400, default_notepad_w=800, default_notepad_h=600)
+    dialog = SettingsDialog(settings)
+
+    assert dialog.note_size_combo.currentData() == (400, 400)
+    assert dialog.notepad_size_combo.currentData() == (800, 600)
+
+
+def _index_for_size(combo, w, h):
+    # Not combo.findData((w, h)) — its equality check doesn't reliably
+    # match a plain Python tuple stored as itemData under PySide6 (see
+    # SettingsDialog._build_size_combo's own comment on this).
+    for i in range(combo.count()):
+        if combo.itemData(i) == (w, h):
+            return i
+    raise AssertionError(f"no preset matches ({w}, {h})")
+
+
+def test_result_settings_reflects_changed_note_and_notepad_size(qapp):
+    dialog = SettingsDialog(Settings())
+    dialog.note_size_combo.setCurrentIndex(_index_for_size(dialog.note_size_combo, 400, 400))
+    dialog.notepad_size_combo.setCurrentIndex(_index_for_size(dialog.notepad_size_combo, 800, 600))
+
+    result = dialog.result_settings()
+
+    assert (result.default_note_w, result.default_note_h) == (400, 400)
+    assert (result.default_notepad_w, result.default_notepad_h) == (800, 600)
+
+
 def test_result_settings_reflects_picked_font_color(qapp):
     dialog = SettingsDialog(Settings())
     grid = dialog._font_color_grid_layout.itemAt(0).widget()

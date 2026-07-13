@@ -134,6 +134,8 @@ class NoteManager(QObject):
         note = Note(
             color=color,
             always_on_top=self.settings.default_always_on_top,
+            w=self.settings.default_note_w,
+            h=self.settings.default_note_h,
         )
         if board is not None:
             note.board_id = board.board.id
@@ -218,7 +220,7 @@ class NoteManager(QObject):
     # -- boards ----------------------------------------------------------
 
     def create_board(self, name: str = "Notepad") -> NotepadWindow:
-        board = Board(name=name)
+        board = Board(name=name, w=self.settings.default_notepad_w, h=self.settings.default_notepad_h)
         board_window = NotepadWindow(board, self)
         self._wire_board(board_window)
         self._schedule_save()
