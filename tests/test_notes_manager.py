@@ -410,6 +410,35 @@ def test_double_clicking_a_trashed_note_does_not_show_it(qapp):
     trashed.show.assert_not_called()
 
 
+def test_double_clicking_a_note_restores_it_if_minimized(qapp):
+    """Regression, reported live: minimizing a note reopened from here left
+    no way to get it back the same way the Notes Manager itself did — see
+    NoteManager.open_notes_manager's own regression test/comment."""
+    note_window = _note_window(title="Some note")
+    manager = _fake_manager(notes={note_window.note.id: note_window})
+    browser = NotesManagerWindow(manager)
+    browser.table.selectRow(0)
+
+    browser._open_selected_note()
+
+    note_window.showNormal.assert_called_once()
+    note_window.raise_.assert_called_once()
+    note_window.activateWindow.assert_called_once()
+
+
+def test_double_clicking_a_board_in_the_tree_restores_it_if_minimized(qapp):
+    board_window = _board_window(name="Work")
+    manager = _fake_manager(boards={board_window.board.id: board_window})
+    browser = NotesManagerWindow(manager)
+    item = browser.tree.findItems("Work", Qt.MatchExactly)[0]
+
+    browser._open_board_from_tree(item, 0)
+
+    board_window.showNormal.assert_called_once()
+    board_window.raise_.assert_called_once()
+    board_window.activateWindow.assert_called_once()
+
+
 def test_table_allows_extended_selection(qapp):
     from PySide6.QtWidgets import QAbstractItemView
 

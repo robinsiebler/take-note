@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QKeySequenceEdit,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -30,6 +31,7 @@ from .models import (
     Settings,
 )
 from .widgets import build_color_swatch_grid
+from .x11_wm import set_skip_taskbar
 
 
 class SettingsDialog(QDialog):
@@ -49,6 +51,7 @@ class SettingsDialog(QDialog):
         self._pending_font_color = settings.default_font_color
         self._test_listener: HotkeyListener | None = None
         self._geometry_grown_to_fit = False
+        self._skip_taskbar_applied = False
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -57,11 +60,9 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._scrollable(self._build_hotkey_tab()), "Hotkey")
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.Apply).clicked.connect(
-            lambda: self.applied.emit(self.result_settings())
-        )
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(self._on_apply)
         layout.addWidget(buttons)
 
         self._restore_geometry()
@@ -80,6 +81,22 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if not self._skip_taskbar_applied:
+            self._skip_taskbar_applied = True
+            # The one Take Note! window that used to be missing this —
+            # every other top-level window (notes, notepads, the Notes
+            # Manager) already skips the taskbar/pager, both to keep the
+            # taskbar uncluttered and to sidestep the same upstream-
+            # confirmed KDE Task Manager bug that mislabels this app's
+            # windows with an unrelated app's (Vorta's) icon. Reported
+            # live: Settings was the one window still showing up there,
+            # Vorta icon and all. Done here in showEvent() rather than
+            # __init__ — set_skip_taskbar sends its state change to the
+            # already-mapped window (see x11_wm.py), and open_settings()
+            # shows this dialog via the blocking exec() rather than
+            # show(), so __init__ runs before the window is actually
+            # mapped.
+            set_skip_taskbar(int(self.winId()), True)
         # Never let a restored (or Qt's own too-small default first-show)
         # size clip content — confirmed live twice: once with no saved
         # geometry at all (Qt's own default first-show size here is
@@ -421,6 +438,53 @@ class SettingsDialog(QDialog):
             (self.roll_all_notes_hotkey_edit, "Roll Up/Down Notes"),
             (self.bring_all_notes_to_front_hotkey_edit, "Bring Notes on Top"),
         ]
+
+    def _duplicate_hotkey_pair(self) -> tuple[str, str] | None:
+        """First pair of hotkey fields committed to the identical combo, or
+        None if none conflict. The Test button already does this same
+        parse_shortcut()-based comparison for one field against the rest
+        (see _test_hotkey_combo), but only when clicked — OK/Apply had no
+        equivalent check at all, silently letting two of this app's own
+        global hotkeys commit to the same combo. Only one of them can ever
+        actually hold the real X11 grab, so the other silently stops
+        working with no visible error (NoteManager._on_hotkey_failed only
+        logs a warning) — confirmed live, reported as "the combo does not
+        register, so there is no conflict detection"."""
+        parsed = []
+        for edit, label in self._all_hotkey_edits():
+            sequence = edit.keySequence().toString()
+            if not sequence:
+                continue
+            try:
+                parsed.append((parse_shortcut(sequence), label))
+            except ValueError:
+                continue
+        for i, (combo_a, label_a) in enumerate(parsed):
+            for combo_b, label_b in parsed[i + 1 :]:
+                if combo_a == combo_b:
+                    return label_a, label_b
+        return None
+
+    def _confirm_no_duplicate_hotkeys(self) -> bool:
+        conflict = self._duplicate_hotkey_pair()
+        if conflict is None:
+            return True
+        label_a, label_b = conflict
+        QMessageBox.warning(
+            self,
+            "Hotkey conflict",
+            f"{label_a} and {label_b} are set to the same combination. Give "
+            "each hotkey its own combination (or clear one) before continuing.",
+        )
+        return False
+
+    def _on_accept(self):
+        if self._confirm_no_duplicate_hotkeys():
+            self.accept()
+
+    def _on_apply(self):
+        if self._confirm_no_duplicate_hotkeys():
+            self.applied.emit(self.result_settings())
 
     def _test_hotkey(self):
         self._test_hotkey_combo(self.hotkey_edit, self.hotkey_status, self._settings.hotkey)

@@ -6,3 +6,4 @@ __pycache__/
 Screenshots/
 test_cases/bug_screenshots/
 start_testing.fish
+end_testing.fish

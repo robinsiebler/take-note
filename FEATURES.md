@@ -64,7 +64,11 @@
   hotkey above, each with its own Clear button to unbind it entirely)
   that live-tests a combo for conflicts — with this app's own other
   live hotkeys, or anything else already holding it — before
-  committing to it. The Hotkey tab scrolls rather than growing the
+  committing to it. OK/Apply also refuse to commit if two of the
+  app's own hotkey fields are set to the identical combo (only one
+  could ever hold the real grab, silently breaking the other) — a
+  clear message names both conflicting fields instead. The Hotkey
+  tab scrolls rather than growing the
   whole dialog to fit, and starts with a note that a combo already
   grabbed by a system-level shortcut (KWin's own global shortcuts,
   etc.) won't register in the field at all — not something the app

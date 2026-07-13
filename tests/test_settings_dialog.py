@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QToolButton
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QMessageBox, QScrollArea, QToolButton
 
 from take_note import spellcheck
 from take_note.models import FONT_SWATCHES, Settings
@@ -150,6 +150,51 @@ def test_apply_button_emits_result_settings_without_closing(qapp):
     assert len(applied) == 1
     assert applied[0].default_font_size == 18
     assert dialog.result() != QDialog.Accepted
+
+
+def test_ok_refuses_to_commit_two_hotkeys_set_to_the_same_combo(qapp, monkeypatch):
+    """Regression, reported live (TC 9.10a): nothing previously stopped OK
+    from committing two of the app's own global hotkeys to the identical
+    combo — only one can ever hold the real X11 grab, so the other
+    silently stops working with no visible error anywhere."""
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a) or QMessageBox.Ok)
+    )
+    settings = Settings(show_hide_all_notes_hotkey="Meta+Alt+U", roll_all_notes_hotkey=None)
+    dialog = SettingsDialog(settings)
+    dialog.roll_all_notes_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+U"))
+
+    dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok).click()
+
+    assert len(warnings) == 1
+    assert dialog.result() != QDialog.Accepted
+
+
+def test_apply_refuses_to_commit_two_hotkeys_set_to_the_same_combo(qapp, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: QMessageBox.Ok))
+    settings = Settings(show_hide_all_notes_hotkey="Meta+Alt+U", roll_all_notes_hotkey=None)
+    dialog = SettingsDialog(settings)
+    dialog.roll_all_notes_hotkey_edit.setKeySequence(QKeySequence("Meta+Alt+U"))
+
+    applied = []
+    dialog.applied.connect(applied.append)
+    dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Apply).click()
+
+    assert applied == []
+
+
+def test_ok_commits_fine_when_no_hotkeys_conflict(qapp, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", staticmethod(lambda *a, **k: warnings.append(a) or QMessageBox.Ok)
+    )
+    dialog = SettingsDialog(Settings())
+
+    dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok).click()
+
+    assert warnings == []
+    assert dialog.result() == QDialog.Accepted
 
 
 def test_restores_saved_dialog_geometry(qapp):

@@ -410,7 +410,9 @@ class NotesManagerWindow(QWidget):
         # set), so this is a no-op while viewing Trash. Use Restore.
         if note_window is None or note_window.note.deleted_at is not None:
             return
-        note_window.show()
+        # showNormal(), not show() — see NoteManager.open_notes_manager's
+        # own comment on why show() alone can't recover a minimized window.
+        note_window.showNormal()
         note_window.raise_()
         note_window.activateWindow()
 
@@ -526,6 +528,8 @@ class NotesManagerWindow(QWidget):
         board_window = self.manager.boards.get(board_id)
         if board_window is None:
             return
-        board_window.show()
+        # showNormal(), not show() — see NoteManager.open_notes_manager's
+        # own comment on why show() alone can't recover a minimized window.
+        board_window.showNormal()
         board_window.raise_()
         board_window.activateWindow()
