@@ -404,6 +404,22 @@ def test_start_notes_manager_hotkey_listener_uses_the_configured_combo(monkeypat
     assert manager.notes_manager_hotkey is listener
 
 
+def test_open_notes_manager_restores_an_already_open_window():
+    """Regression, reported live: minimizing the Notes Manager left no way
+    to get it back — show() is a no-op on a window that's already
+    "visible" to Qt, which a minimized window still is. showNormal()
+    actually clears the minimized state."""
+    manager = Mock()
+    existing = Mock()
+    manager.notes_manager = existing
+
+    NoteManager.open_notes_manager(manager)
+
+    existing.showNormal.assert_called_once()
+    existing.raise_.assert_called_once()
+    existing.activateWindow.assert_called_once()
+
+
 def test_notes_manager_hotkey_triggered_opens_the_notes_manager(monkeypatch):
     _FakeHotkeyListener.instances = []
     monkeypatch.setattr(app_module, "HotkeyListener", _FakeHotkeyListener)

@@ -258,7 +258,15 @@ class NoteManager(QObject):
         if self.notes_manager is None:
             self.notes_manager = NotesManagerWindow(self)
         else:
-            self.notes_manager.show()
+            # Not show() — a no-op if the window is already "visible" to
+            # Qt, which a minimized window still is (minimizing only sets
+            # Qt::WindowMinimized, it doesn't hide the widget). Reported
+            # live: minimizing the Notes Manager left no way to get it
+            # back, since it also skips the taskbar/pager. showNormal()
+            # clears the minimized/maximized state and shows the widget
+            # in one call, so it works whether the window was minimized
+            # or just not the active window.
+            self.notes_manager.showNormal()
             self.notes_manager.raise_()
             self.notes_manager.activateWindow()
 
