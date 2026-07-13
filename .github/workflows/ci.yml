@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -17,10 +18,10 @@ jobs:
       # sync with what a real (headless) runner actually needs.
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -39,3 +40,29 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+  build:
+    # A separate job from `test`, on a single Python version rather than
+    # the full matrix — this only needs to catch a pyproject.toml/
+    # packaging mistake that `pip install -e .` (editable, what `test`
+    # actually exercises) wouldn't, not re-verify behavior per interpreter.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install build
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Install the built wheel into a clean venv
+        run: |
+          python -m venv /tmp/take-note-build-check
+          /tmp/take-note-build-check/bin/pip install dist/*.whl
+          /tmp/take-note-build-check/bin/python -c "import take_note"
