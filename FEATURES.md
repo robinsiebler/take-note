@@ -74,7 +74,8 @@
   etc.) won't register in the field at all — not something the app
   can reliably detect ahead of time. Has Apply (try a setting without
   closing the dialog) alongside OK/Cancel, and remembers its own
-  window position across restarts.
+  window position across restarts. Opening it again while already
+  open just raises/focuses the existing one (doesn't spawn a second).
 - Notepads: group notes onto a shared corkboard-style window that shows,
   hides, and moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark

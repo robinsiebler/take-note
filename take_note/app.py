@@ -42,6 +42,7 @@ class NoteManager(QObject):
         self.notes: dict[str, NoteWindow] = {}
         self.boards: dict[str, NotepadWindow] = {}
         self.notes_manager: "NotesManagerWindow | None" = None
+        self._settings_dialog: SettingsDialog | None = None
         # Cascades each new standalone note CASCADE_OFFSET further from the
         # last, so creating several in a row doesn't stack them exactly on
         # top of each other (confusing — no visible sign a new note even
@@ -273,27 +274,43 @@ class NoteManager(QObject):
     # -- settings ------------------------------------------------------
 
     def open_settings(self):
+        # Reported live: the tray's own context menu (a separate top-level
+        # popup managed by the desktop shell, not this app's window stack)
+        # stays reachable even while the dialog below is already blocked
+        # on its modal exec() — clicking Settings… again spawned a second
+        # independent SettingsDialog/exec() instead of just refocusing the
+        # first. Same reuse-the-existing-window idea as open_notes_manager,
+        # just raise/activate instead of creating a second one.
+        if self._settings_dialog is not None:
+            self._settings_dialog.raise_()
+            self._settings_dialog.activateWindow()
+            return
+
         # Reflect the real filesystem state rather than trusting a
         # persisted flag that could drift if the autostart file was added
         # or removed outside the app.
         self.settings.launch_at_login = autostart.is_enabled()
 
         dialog = SettingsDialog(self.settings)
-        # Apply live-applies without closing the dialog; OK still goes
-        # through the same _apply_settings() after exec() returns, so
-        # clicking Apply once and then OK just re-applies identically
-        # unchanged settings rather than double-applying anything.
-        dialog.applied.connect(self._apply_settings)
-        if dialog.exec():
-            self._apply_settings(dialog.result_settings())
-        else:
-            # Cancelled — no setting change to apply, but the dialog's
-            # own moveEvent/resizeEvent already wrote its latest geometry
-            # directly into self.settings (same object, passed by
-            # reference), so it still needs a save to actually reach
-            # disk, matching the fact that window position isn't a
-            # "setting" the user is choosing to discard by cancelling.
-            self._schedule_save()
+        self._settings_dialog = dialog
+        try:
+            # Apply live-applies without closing the dialog; OK still goes
+            # through the same _apply_settings() after exec() returns, so
+            # clicking Apply once and then OK just re-applies identically
+            # unchanged settings rather than double-applying anything.
+            dialog.applied.connect(self._apply_settings)
+            if dialog.exec():
+                self._apply_settings(dialog.result_settings())
+            else:
+                # Cancelled — no setting change to apply, but the dialog's
+                # own moveEvent/resizeEvent already wrote its latest geometry
+                # directly into self.settings (same object, passed by
+                # reference), so it still needs a save to actually reach
+                # disk, matching the fact that window position isn't a
+                # "setting" the user is choosing to discard by cancelling.
+                self._schedule_save()
+        finally:
+            self._settings_dialog = None
 
     def _apply_settings(self, new_settings: Settings):
         hotkey_changed = new_settings.hotkey != self.settings.hotkey

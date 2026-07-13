@@ -341,6 +341,64 @@ def test_apply_settings_leaves_highlighters_alone_when_unchanged(monkeypatch):
     note_window._detach_spell_highlighter.assert_not_called()
 
 
+class _FakeSettingsDialog:
+    """Stands in for the real SettingsDialog — a real QDialog.exec() blocks
+    on a modal event loop, which a plain unit test has no way to satisfy
+    from the same thread. instances records every one constructed so a
+    test can assert exactly one (or none) got created."""
+
+    instances: list["_FakeSettingsDialog"] = []
+
+    def __init__(self, settings):
+        self.settings = settings
+        self.applied = Mock()
+        self.raise_ = Mock()
+        self.activateWindow = Mock()
+        self.exec_return = 0
+        _FakeSettingsDialog.instances.append(self)
+
+    def exec(self):
+        return self.exec_return
+
+    def result_settings(self):
+        return self.settings
+
+
+def test_open_settings_reuses_the_existing_dialog_if_already_open(monkeypatch):
+    """Regression, reported live: the tray's own context menu (a separate
+    top-level popup managed by the desktop shell, not this app's window
+    stack) stays reachable even while a modal SettingsDialog is already
+    blocked on its own exec() — clicking Settings… again spawned a second
+    independent dialog instead of just refocusing the first."""
+    monkeypatch.setattr(app_module.autostart, "is_enabled", lambda: False)
+    _FakeSettingsDialog.instances = []
+    monkeypatch.setattr(app_module, "SettingsDialog", _FakeSettingsDialog)
+    manager = Mock()
+    manager.settings = Settings()
+    existing = Mock()
+    manager._settings_dialog = existing
+
+    NoteManager.open_settings(manager)
+
+    existing.raise_.assert_called_once()
+    existing.activateWindow.assert_called_once()
+    assert _FakeSettingsDialog.instances == []
+
+
+def test_open_settings_clears_the_tracked_dialog_once_closed(monkeypatch):
+    monkeypatch.setattr(app_module.autostart, "is_enabled", lambda: False)
+    _FakeSettingsDialog.instances = []
+    monkeypatch.setattr(app_module, "SettingsDialog", _FakeSettingsDialog)
+    manager = Mock()
+    manager.settings = Settings()
+    manager._settings_dialog = None
+
+    NoteManager.open_settings(manager)
+
+    assert len(_FakeSettingsDialog.instances) == 1
+    assert manager._settings_dialog is None
+
+
 class _FakeHotkeyListener:
     """Stands in for the real HotkeyListener (a QThread that opens a real
     X11 connection and would hang/crash under the offscreen QPA platform,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -90,13 +90,21 @@ class SettingsDialog(QDialog):
             # confirmed KDE Task Manager bug that mislabels this app's
             # windows with an unrelated app's (Vorta's) icon. Reported
             # live: Settings was the one window still showing up there,
-            # Vorta icon and all. Done here in showEvent() rather than
-            # __init__ — set_skip_taskbar sends its state change to the
-            # already-mapped window (see x11_wm.py), and open_settings()
-            # shows this dialog via the blocking exec() rather than
-            # show(), so __init__ runs before the window is actually
-            # mapped.
-            set_skip_taskbar(int(self.winId()), True)
+            # Vorta icon and all — twice now, the first attempt (calling
+            # set_skip_taskbar directly here) apparently wasn't enough.
+            # set_skip_taskbar sends its state change to the
+            # already-mapped window (see x11_wm.py), but showEvent()
+            # firing doesn't guarantee KWin has actually finished
+            # adopting the window as a real client yet — the other
+            # windows call this right after a plain show() returns, not
+            # from inside a showEvent() override, which may leave more
+            # time for that to settle. QTimer.singleShot(0, ...) defers
+            # the call to the next iteration of the event loop, after
+            # whatever's currently pending (including the platform's own
+            # window-mapping handling) has been processed, rather than
+            # sending it synchronously mid-showEvent.
+            window_id = int(self.winId())
+            QTimer.singleShot(0, lambda: set_skip_taskbar(window_id, True))
         # Never let a restored (or Qt's own too-small default first-show)
         # size clip content — confirmed live twice: once with no saved
         # geometry at all (Qt's own default first-show size here is
