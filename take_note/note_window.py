@@ -4,7 +4,19 @@ import base64
 import re
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPointF, QRectF, QSize, QUrl, Qt, Signal
+from PySide6.QtCore import (
+    QBuffer,
+    QByteArray,
+    QDateTime,
+    QIODevice,
+    QPointF,
+    QRectF,
+    QSize,
+    QTimer,
+    QUrl,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -25,6 +37,9 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
+    QDateTimeEdit,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFontDialog,
     QGraphicsOpacityEffect,
@@ -34,6 +49,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
+    QPushButton,
     QSizeGrip,
     QSizePolicy,
     QSpacerItem,
@@ -48,6 +64,7 @@ from PySide6.QtWidgets import (
 from . import spellcheck
 from .list_markers import paint_list_markers
 from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
+from .reminders import format_reminder_for_display, local_datetime_to_utc_iso, utc_iso_to_local_datetime
 from .widgets import build_color_swatch_grid
 from .window_watch import WindowWatcher, is_window_iconic, list_windows
 from .x11_wm import set_skip_taskbar, set_stays_on_top
@@ -213,6 +230,45 @@ def tag_icon(size: int = 18) -> QIcon:
     path.lineTo(left, bottom)
     path.closeSubpath()
     painter.drawPath(path)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
+def reminder_icon(size: int = 18) -> QIcon:
+    """A hand-drawn bell shape, same convention as lock_icon/tag_icon —
+    no Unicode bell emoji dependency (the same blank-gap problem already
+    confirmed for the padlock emoji applies here too). Plain white, no
+    second color: a set reminder isn't a restricted/warning state, same
+    reasoning as tag_icon."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor("white"))
+
+    top = size * 0.16
+    bottom = size * 0.68
+    dome_left = size * 0.28
+    dome_right = size * 0.72
+    base_left = size * 0.16
+    base_right = size * 0.84
+    path = QPainterPath()
+    path.moveTo(size / 2, top)
+    path.cubicTo(dome_left, top, dome_left, size * 0.3, dome_left, size * 0.3)
+    path.lineTo(base_left, bottom)
+    path.lineTo(base_right, bottom)
+    path.lineTo(dome_right, size * 0.3)
+    path.cubicTo(dome_right, size * 0.3, dome_right, top, size / 2, top)
+    path.closeSubpath()
+    painter.drawPath(path)
+
+    lip_h = size * 0.08
+    painter.drawRoundedRect(QRectF(base_left, bottom, base_right - base_left, lip_h), lip_h / 2, lip_h / 2)
+
+    clapper_d = size * 0.14
+    painter.drawEllipse(QRectF((size - clapper_d) / 2, bottom + lip_h + size * 0.02, clapper_d, clapper_d))
 
     painter.end()
     return QIcon(pixmap)
@@ -407,6 +463,16 @@ class NoteHeader(QWidget):
         self.tag_btn.hide()
         layout.addWidget(self.tag_btn)
 
+        # Same hidden-by-default convention as tag_btn — most notes won't
+        # have a reminder set.
+        self.reminder_btn = QToolButton()
+        self.reminder_btn.setAutoRaise(True)
+        self.reminder_btn.setIconSize(QSize(18, 18))
+        self.reminder_btn.setIcon(reminder_icon())
+        self.reminder_btn.clicked.connect(note_window.show_reminder_dialog)
+        self.reminder_btn.hide()
+        layout.addWidget(self.reminder_btn)
+
         self.lock_btn = _LockButton(note_window)
         self.lock_btn.setAutoRaise(True)
         self.lock_btn.setIconSize(QSize(18, 18))
@@ -430,6 +496,11 @@ class NoteHeader(QWidget):
         self.tag_btn.setVisible(bool(tags))
         if tags:
             self.tag_btn.setToolTip("Tags: " + ", ".join(tags))
+
+    def update_reminder_indicator(self, reminder_at: str | None):
+        self.reminder_btn.setVisible(reminder_at is not None)
+        if reminder_at is not None:
+            self.reminder_btn.setToolTip("Reminder: " + format_reminder_for_display(reminder_at))
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -830,6 +901,46 @@ class NoteTitleBar(QWidget):
         )
 
 
+class _ReminderDialog(QDialog):
+    """Set/edit/clear a note's reminder. Not built on _new_note_dialog()
+    (that returns a QInputDialog, plain text only, no date/time widget),
+    but the same deliberately-parentless convention applies — see that
+    method's own docstring for the full palette-bleed explanation this
+    dialog would suffer from too if given the note as a parent.
+
+    A QDateTimeEdit can't be "emptied" back to none the way a text field
+    can, so Clear Reminder is a separate button with its own distinct
+    result code rather than an equivalent of an empty string."""
+
+    Cleared = QDialog.Accepted + 1
+
+    def __init__(self, reminder_at: str | None):
+        super().__init__()
+        self.setWindowTitle("Reminder" if reminder_at is None else "Edit Reminder")
+
+        layout = QVBoxLayout(self)
+
+        self.date_time_edit = QDateTimeEdit()
+        self.date_time_edit.setCalendarPopup(True)
+        self.date_time_edit.setMinimumDateTime(QDateTime.currentDateTime())
+        if reminder_at is not None:
+            local_dt = utc_iso_to_local_datetime(reminder_at)
+            self.date_time_edit.setDateTime(QDateTime(local_dt))
+        else:
+            self.date_time_edit.setDateTime(QDateTime.currentDateTime().addSecs(3600))
+        layout.addWidget(self.date_time_edit)
+
+        if reminder_at is not None:
+            clear_button = QPushButton("Clear Reminder")
+            clear_button.clicked.connect(lambda: self.done(self.Cleared))
+            layout.addWidget(clear_button)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
 class NoteWindow(QWidget):
     changed = Signal()
 
@@ -906,6 +1017,7 @@ class NoteWindow(QWidget):
         self.body.cursorPositionChanged.connect(self._fix_ambient_char_format)
         self.set_locked(note.locked, persist=False)
         self.header.update_tag_indicator(note.tags)
+        self.header.update_reminder_indicator(note.reminder_at)
         self.title_bar.set_title(note.title)
         self._apply_opacity()
         self.show()
@@ -1136,6 +1248,7 @@ class NoteWindow(QWidget):
         # fired no matter how correctly it was wired here. Shift+F2 is
         # free in both this app's own shortcuts and KWin's global defaults.
         self.title_action = make_action("Add Title…", "Shift+F2", self.show_title_dialog)
+        self.reminder_action = make_action("Set Reminder…", None, self.show_reminder_dialog)
 
         # Checkable + exclusive (same pattern as list_style_group below)
         # so the submenu shows which alignment the current paragraph
@@ -1307,7 +1420,7 @@ class NoteWindow(QWidget):
         dialog.findChild(QLineEdit).setClearButtonEnabled(True)
         return dialog
 
-    def _center_dialog_over_note(self, dialog: QInputDialog):
+    def _center_dialog_over_note(self, dialog: QWidget):
         center = self.mapToGlobal(self.rect().center())
         dialog.move(center - dialog.rect().center())
 
@@ -1454,6 +1567,20 @@ class NoteWindow(QWidget):
             dict.fromkeys(t.strip() for t in dialog.textValue().split(",") if t.strip())
         )
         self.header.update_tag_indicator(self.note.tags)
+        self.mark_changed()
+
+    def show_reminder_dialog(self):
+        dialog = _ReminderDialog(self.note.reminder_at)
+        dialog.resize(480, dialog.sizeHint().height())
+        self._center_dialog_over_note(dialog)
+        result = dialog.exec()
+        if result == _ReminderDialog.Cleared:
+            self.note.reminder_at = None
+        elif result == QDialog.Accepted:
+            self.note.reminder_at = local_datetime_to_utc_iso(dialog.date_time_edit.dateTime().toPython())
+        else:
+            return  # Cancelled — leave the existing reminder untouched.
+        self.header.update_reminder_indicator(self.note.reminder_at)
         self.mark_changed()
 
     def show_insert_image_dialog(self):
@@ -2229,7 +2356,18 @@ class NoteWindow(QWidget):
             # *reparent* recreates the native window and re-applies this
             # for that reason; a plain hide()/show() cycle on an otherwise
             # untouched window turns out to need the same re-assertion.
-            set_skip_taskbar(int(self.winId()), True)
+            win_id = int(self.winId())
+            set_skip_taskbar(win_id, True)
+            # Confirmed live: even with the reassertion above, rapid
+            # repeated minimize/restore cycling via Stick to Window could
+            # still leak the note into the taskbar (Vorta-icon preview of
+            # the note itself, not the stuck-to window) — set_skip_taskbar
+            # sends a fire-and-forget EWMH client message that's only
+            # reliably honored once the window is actually mapped by the X
+            # server, and that mapping can land slightly after this
+            # showEvent fires. A second resend shortly after gives the
+            # mapping time to complete first.
+            QTimer.singleShot(100, lambda: set_skip_taskbar(win_id, True))
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -2436,6 +2574,9 @@ class NoteWindow(QWidget):
         the body's text-formatting menu (see populate_text_menu)."""
         self.title_action.setText("Edit Title…" if self.note.title else "Add Title…")
         menu.addAction(self.title_action)
+
+        self.reminder_action.setText("Edit Reminder…" if self.note.reminder_at else "Set Reminder…")
+        menu.addAction(self.reminder_action)
 
         tags_action = menu.addAction("Tags…")
         tags_action.triggered.connect(self.show_tags_dialog)

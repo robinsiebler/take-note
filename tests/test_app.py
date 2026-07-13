@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from take_note import app as app_module
@@ -116,6 +117,111 @@ def test_bring_all_notes_to_front_raises_every_note():
 
     for note_window in manager.notes.values():
         note_window.raise_.assert_called_once()
+
+
+def test_check_reminders_fires_a_due_note():
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    note_window.note.reminder_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    # _check_reminders() calls self._fire_reminder(...) internally — on a
+    # bare Mock that would just hit an auto-generated stub instead of the
+    # real method, so bind the real implementation through explicitly
+    # (same pattern already used for _restart_notes_manager_hotkey_listener
+    # above).
+    manager._fire_reminder = lambda nw: NoteManager._fire_reminder(manager, nw)
+
+    NoteManager._check_reminders(manager)
+
+    assert note_window.note.reminder_at is None
+    note_window.header.update_reminder_indicator.assert_called_once_with(None)
+    note_window.set_rolled.assert_called_once_with(False)
+    note_window.showNormal.assert_called_once()
+    note_window.raise_.assert_called_once()
+    note_window.activateWindow.assert_called_once()
+    manager._schedule_save.assert_called_once()
+
+
+def test_fire_reminder_flashes_above_when_not_always_on_top(qapp, monkeypatch):
+    """Confirmed live: showNormal()/raise_()/activateWindow() alone are
+    silently denied by KWin's focus-stealing prevention when triggered from
+    this background timer rather than a direct user click, leaving a note
+    that's actually hidden behind other windows invisible (notes always
+    skip_taskbar, so there's no fallback either). Forcing the EWMH "above"
+    state is a stacking-order change, not a focus/activation request, so it
+    isn't subject to the same restriction — same mechanism the real
+    Always-on-Top toggle already uses. Reverted after a flash so a note the
+    user didn't mark Always-on-Top doesn't stay pinned above everything."""
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    note_window.note.always_on_top = False
+    note_window.winId.return_value = 4242
+    stays_on_top_calls = []
+    monkeypatch.setattr(
+        app_module,
+        "set_stays_on_top",
+        lambda win_id, enabled: stays_on_top_calls.append((win_id, enabled)),
+    )
+    monkeypatch.setattr(app_module.QTimer, "singleShot", lambda ms, cb: cb())
+
+    NoteManager._fire_reminder(manager, note_window)
+
+    assert stays_on_top_calls == [(4242, True), (4242, False)]
+
+
+def test_fire_reminder_does_not_flash_when_already_always_on_top():
+    """Note() defaults to always_on_top=True — already above everything,
+    nothing to force."""
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+
+    NoteManager._fire_reminder(manager, note_window)
+
+    note_window.winId.assert_not_called()
+
+
+def test_fire_reminder_does_not_flash_for_board_attached_note():
+    """A board-attached note is a plain child widget with no top-level
+    window/WM state of its own — its raise_() above already reorders it
+    within the board canvas, no EWMH call needed or possible."""
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    note_window.note.always_on_top = False
+    note_window.note.board_id = "board-1"
+
+    NoteManager._fire_reminder(manager, note_window)
+
+    note_window.winId.assert_not_called()
+
+
+def test_check_reminders_leaves_a_not_yet_due_note_alone():
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    future_iso = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    note_window.note.reminder_at = future_iso
+
+    NoteManager._check_reminders(manager)
+
+    assert note_window.note.reminder_at == future_iso
+    note_window.showNormal.assert_not_called()
+    manager._schedule_save.assert_not_called()
+
+
+def test_check_reminders_skips_a_trashed_note():
+    """A trashed note stays hidden regardless — popping it up when its
+    reminder comes due would be a surprising, implicit "un-trash". Not
+    re-armed later just because the note gets restored either (the
+    reminder is simply gone, not rescheduled)."""
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    note_window.note.reminder_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    note_window.note.deleted_at = "2026-01-01T00:00:00+00:00"
+
+    NoteManager._check_reminders(manager)
+
+    assert note_window.note.reminder_at is not None
+    note_window.showNormal.assert_not_called()
+    manager._schedule_save.assert_not_called()
+
 
 
 def test_toggle_roll_all_notes_rolls_up_when_any_expanded():
@@ -296,6 +402,26 @@ def test_load_from_disk_seeds_cascade_offset_from_standalone_note_count(qapp, mo
     NoteManager.load_from_disk(manager)
 
     assert manager._new_note_cascade_offset == app_module.CASCADE_OFFSET * 2
+
+
+def test_load_from_disk_checks_reminders_once_after_loading(qapp, monkeypatch):
+    """Must run after every NoteWindow is constructed and wired, not
+    during __init__ (too early, no note windows exist yet) — catches a
+    reminder that came due while the app was closed, per explicit user
+    call. Reuses _check_reminders() rather than separate catch-up logic,
+    so "missed while closed" and "came due while running" share one code
+    path — asserted here as an orchestration/wiring check (same style as
+    the cascade-offset test above), not a full end-to-end reminder fire,
+    since this harness's Mock manager means _wire_note()/_check_reminders
+    itself never really runs against manager.notes."""
+    notes = [Note()]
+    settings = Settings()
+    monkeypatch.setattr(app_module.storage, "load_all", lambda: (notes, [], settings))
+    manager = _fake_manager_for_create_note(settings)
+
+    NoteManager.load_from_disk(manager)
+
+    manager._check_reminders.assert_called_once()
 
 
 def _fake_manager_for_apply_settings(settings) -> Mock:
