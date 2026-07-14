@@ -32,7 +32,26 @@ unchecked, so a re-test later doesn't have to rediscover the same bug.
     - [x] Pass - confirmed live 2026-07-13; volume bumped from 0.6 to 0.72 (20% louder) per feedback, then confirmed good.
     - [ ] Fail
     - [ ] Pass with Issues
-- [ ] **1.3** Uncheck it, click OK, set another reminder — it fires silently (still raises visually, just no sound).
-    - [ ] Pass
+- [x] **1.3** Uncheck it, click OK, set another reminder — it fires silently (still raises visually, just no sound).
+    - [x] Pass
+    - [ ] Fail
+    - [ ] Pass with Issues
+
+## 2. Reminders — quick relative time picker
+
+- [x] **2.1** ☰ → **Set Reminder…** on a note with no existing reminder shows two radio-button options: **"Remind me in"** (a minutes spinbox, defaulting to 15, and selected by default) and **"Remind me at"** (the original date/time picker, greyed out while the first option is selected).
+    - [x] Pass
+    - [ ] Fail
+    - [ ] Pass with Issues
+- [x] **2.2** Selecting **"Remind me at"** enables its date/time picker and greys out the minutes spinbox instead — only one is ever editable at a time.
+    - [x] Pass
+    - [ ] Fail
+    - [ ] Pass with Issues
+- [x] **2.3** With "Remind me in" selected, set it to a couple of minutes and click OK — the bell icon appears immediately, and its tooltip shows a time that's actually about that many minutes from now.
+    - [x] Pass
+    - [ ] Fail
+    - [ ] Pass with Issues
+- [x] **2.4** ☰ → **Edit Reminder…** on a note that already has a reminder set defaults to **"Remind me at"** (not the quick minutes option), prefilled with the existing time — same as before this change.
+    - [x] Pass
     - [ ] Fail
     - [ ] Pass with Issues
