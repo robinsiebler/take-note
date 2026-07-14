@@ -3,10 +3,16 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QTableWidget, QTableWidgetItem
 
 from take_note.models import Board, Note, Settings
-from take_note.notes_manager import ALL_NOTES, UNFILED, NotesManagerWindow, _format_modified
+from take_note.notes_manager import (
+    ALL_NOTES,
+    UNFILED,
+    NotesManagerWindow,
+    _DateTableWidgetItem,
+    _format_modified,
+)
 
 
 def _note_window(body_text: str = "", **kwargs) -> Mock:
@@ -173,6 +179,42 @@ def test_tags_column_blank_when_untagged(qapp):
     browser = NotesManagerWindow(manager)
 
     assert browser.table.item(0, 4).text() == ""
+
+
+def test_reminder_column_shows_formatted_time_when_set(qapp):
+    n1 = _note_window(title="Report", reminder_at="2026-08-01T15:30:00+00:00")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesManagerWindow(manager)
+
+    assert browser.table.item(0, 5).text() == _format_modified("2026-08-01T15:30:00+00:00")
+
+
+def test_reminder_column_blank_when_not_set(qapp):
+    n1 = _note_window(title="Groceries")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesManagerWindow(manager)
+
+    assert browser.table.item(0, 5).text() == ""
+
+
+def test_sorting_a_column_mixing_date_and_plain_items_does_not_recurse(qapp):
+    """Regression: confirmed live — sorting the Reminder column (the
+    first column to ever mix _DateTableWidgetItem, when a reminder is
+    set, with a plain QTableWidgetItem(""), when it isn't) crashed with
+    a RecursionError inside __lt__. Date Modified never mixed types
+    (modified_at is never null), so this was dead code until now."""
+    # Confirmed directly: too few rows doesn't reliably trigger the
+    # recursive comparison within pytest's own stack depth (unlike a
+    # bare script, which crashed even at 2 rows) — 8 rows reliably hits
+    # it, matching the real live crash.
+    table = QTableWidget(8, 1)
+    for row in range(8):
+        if row % 2 == 0:
+            table.setItem(row, 0, _DateTableWidgetItem(f"2026-08-0{row + 1}T00:00:00+00:00"))
+        else:
+            table.setItem(row, 0, QTableWidgetItem(""))
+
+    table.sortItems(0)
 
 
 def test_tree_has_no_tags_section_when_no_notes_are_tagged(qapp):

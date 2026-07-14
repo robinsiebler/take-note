@@ -145,8 +145,6 @@ Features above rather than re-deriving it from history here.
 - Thumbnail + open-full-size for oversized embedded pictures
 - Tray menu separators render as plain gaps (KDE's native tray menu
   protocol doesn't pick up the app's own stylesheet — no clean fix found)
-- Reminders: a Notes Manager column showing when a note's reminder
-  will fire
 
 **Distant future, not scoped:** cloud sync, a Markdown editing mode.
 

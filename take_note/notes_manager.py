@@ -63,7 +63,18 @@ class _DateTableWidgetItem(QTableWidgetItem):
     def __lt__(self, other):
         if isinstance(other, _DateTableWidgetItem):
             return self._sort_key < other._sort_key
-        return super().__lt__(other)
+        # Confirmed live: calling super().__lt__(other) here — comparing
+        # against a plain QTableWidgetItem, not another instance of this
+        # subclass — triggers a Shiboken virtual-dispatch re-entrancy loop
+        # (RecursionError: "Error calling Python override of
+        # QTableWidgetItem::__lt__()"). This branch was dead code until
+        # the Reminder column (notes_manager.py's _apply_filter) became
+        # the first column to actually mix _DateTableWidgetItem (reminder
+        # set) with a plain QTableWidgetItem("") (no reminder) in the same
+        # column — Date Modified never mixes types, since modified_at is
+        # never null. A plain Python text comparison sidesteps the C++
+        # virtual call entirely.
+        return self.text() < other.text()
 
 
 class NotesManagerWindow(QWidget):
@@ -176,8 +187,10 @@ class NotesManagerWindow(QWidget):
         toolbar.addStretch()
         right_layout.addLayout(toolbar)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Title", "Preview", "Notepad", "Date Modified", "Tags"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Title", "Preview", "Notepad", "Date Modified", "Tags", "Reminder"]
+        )
         # Sorting must be enabled before sectionSizeHint() is read below —
         # the hint only reserves room for the sort-indicator arrow once
         # the header actually shows one, so computing it before this line
@@ -209,6 +222,7 @@ class NotesManagerWindow(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -349,6 +363,10 @@ class NotesManagerWindow(QWidget):
             date_value = note.deleted_at if in_trash else note.modified_at
             self.table.setItem(row, 3, _DateTableWidgetItem(date_value))
             self.table.setItem(row, 4, QTableWidgetItem(", ".join(note.tags)))
+            reminder_item = (
+                _DateTableWidgetItem(note.reminder_at) if note.reminder_at else QTableWidgetItem("")
+            )
+            self.table.setItem(row, 5, reminder_item)
         self.table.setSortingEnabled(True)
 
     def _update_toolbar(self, in_trash: bool):
