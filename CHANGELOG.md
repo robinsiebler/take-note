@@ -3,12 +3,16 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.4.0] - 2026-07-13
+## [1.5.0] - 2026-07-14
 
 ### Added
 - Reminders now play a brief chime when they fire, alongside raising
   the note — toggleable via a new "Play a sound when a reminder fires"
   checkbox in Settings → General (on by default).
+- Set Reminder… now offers a quick "remind me in N minutes" option
+  (the default for a brand-new reminder) alongside the original
+  absolute date/time picker (the default when editing one already
+  set).
 
 ## [1.3.0] - 2026-07-13
 
@@ -88,7 +92,7 @@ First tagged release. Highlights:
 - System tray for quick actions (new note/board, Notes Browser,
   Settings, bulk show/hide/roll).
 
-[1.4.0]: https://github.com/robinsiebler/take-note/compare/v1.3.0...v1.4.0
+[1.5.0]: https://github.com/robinsiebler/take-note/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/robinsiebler/take-note/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/robinsiebler/take-note/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/robinsiebler/take-note/compare/v1.0.0...v1.1.0
