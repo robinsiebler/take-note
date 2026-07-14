@@ -109,7 +109,7 @@ jobs:
       - name: Install Qt runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6 libpulse0
 
       - name: Install dependencies
         run: pip install -e . pytest pytest-cov "genbadge[coverage]"
