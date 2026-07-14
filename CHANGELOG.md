@@ -3,6 +3,19 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] - 2026-07-14
+
+### Added
+- Notes Manager: a new Reminder column shows each note's reminder due
+  time, blank when unset.
+
+### Fixed
+- Sorting the Notes Manager table by a column mixing formatted-date
+  and blank items (as the new Reminder column does) could crash the
+  app (SIGSEGV) — a latent recursion bug in `_DateTableWidgetItem`'s
+  comparison, never triggered before since Date Modified never mixed
+  item types.
+
 ## [1.5.0] - 2026-07-14
 
 ### Added
@@ -92,6 +105,7 @@ First tagged release. Highlights:
 - System tray for quick actions (new note/board, Notes Browser,
   Settings, bulk show/hide/roll).
 
+[1.6.0]: https://github.com/robinsiebler/take-note/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/robinsiebler/take-note/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/robinsiebler/take-note/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/robinsiebler/take-note/compare/v1.1.0...v1.2.0
