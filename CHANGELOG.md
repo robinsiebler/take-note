@@ -3,6 +3,13 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.0] - 2026-07-14
+
+### Added
+- Tray icon: a "Notepads" submenu lists every board by name, each with
+  a checkmark showing whether it's currently shown or hidden — click
+  to toggle it directly, without going through the Notes Manager.
+
 ## [1.6.0] - 2026-07-14
 
 ### Added
@@ -105,6 +112,7 @@ First tagged release. Highlights:
 - System tray for quick actions (new note/board, Notes Browser,
   Settings, bulk show/hide/roll).
 
+[1.7.0]: https://github.com/robinsiebler/take-note/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/robinsiebler/take-note/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/robinsiebler/take-note/compare/v1.3.0...v1.5.0
 [1.3.0]: https://github.com/robinsiebler/take-note/compare/v1.2.0...v1.3.0
