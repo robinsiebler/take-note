@@ -769,10 +769,6 @@ One-shot only — a reminder fires once and clears itself, no repeat/ recurrence
     - [x] Pass - retested 2026-07-13, see 14.3
     - [ ] Fail
     - [ ] Pass with Issues
-- [x] **14.10** Settings → General has a **"Play a sound when a reminder fires"** checkbox, checked by default. With it checked, set a short reminder — you should actually **hear** a brief chime the moment it fires (at the same time it raises/flashes to the front). Uncheck it, click OK, set another reminder — it fires silently (still raises visually, just no sound).
-    - [x] Pass - confirmed live 2026-07-13; volume bumped from 0.6 to 0.72 (20% louder) per feedback, then confirmed good.
-    - [ ] Fail
-    - [ ] Pass with Issues
 
 * * *
 
