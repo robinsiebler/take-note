@@ -94,13 +94,10 @@ class TrayIcon(QSystemTrayIcon):
             action.toggled.connect(lambda checked, bw=board_window: self._toggle_board(bw, checked))
 
     def _toggle_board(self, board_window, checked: bool):
+        # show_board()/hide_board() (not raw showNormal()/hide()) — also
+        # persists board.hidden, so toggling a board here is remembered
+        # across a restart, same as toggling it via the board's own ×.
         if checked:
-            # showNormal(), not show() — see NoteManager.open_notes_manager's
-            # own comment on why show() alone can't recover a minimized
-            # window; _open_board_from_tree() in notes_manager.py uses the
-            # exact same sequence for reopening a board from the tree.
-            board_window.showNormal()
-            board_window.raise_()
-            board_window.activateWindow()
+            board_window.show_board()
         else:
-            board_window.hide()
+            board_window.hide_board()

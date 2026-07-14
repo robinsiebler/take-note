@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
-from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox, QToolButton
 
 from take_note.board_window import _TEXTURE_TILE_SIZE, _build_corkboard_texture, NotepadWindow
 from take_note.models import Board, Note, Settings
@@ -59,6 +59,61 @@ def test_empty_board_canvas_matches_viewport_not_a_fixed_minimum(qapp):
 
     assert not board.scroll.horizontalScrollBar().isVisible()
     assert not board.scroll.verticalScrollBar().isVisible()
+
+
+def test_board_loaded_hidden_stays_hidden(qapp):
+    """Regression: NotepadWindow.__init__ used to unconditionally show()
+    with no way to load already-closed - every board reopened on every
+    launch regardless of whether it had been closed before quitting."""
+    board = NotepadWindow(Board(hidden=True), FakeManager())
+
+    assert board.isHidden()
+
+
+def test_board_loaded_not_hidden_shows_normally(qapp):
+    board = NotepadWindow(Board(hidden=False), FakeManager())
+
+    assert not board.isHidden()
+
+
+def test_hide_board_persists_hidden_and_hides(qapp):
+    board = NotepadWindow(Board(), FakeManager())
+
+    board.hide_board()
+
+    assert board.board.hidden is True
+    assert board.isHidden()
+
+
+def test_show_board_persists_not_hidden_and_shows(qapp):
+    board = NotepadWindow(Board(hidden=True), FakeManager())
+
+    board.show_board()
+
+    assert board.board.hidden is False
+    assert not board.isHidden()
+
+
+def test_show_board_on_an_already_visible_board_does_not_bump_modified_at(qapp):
+    """show_board() also serves as the plain "bring to front" action
+    (_open_board_from_tree, the tray's checkmark toggle) - re-focusing an
+    already-visible board is not a real edit, matching how raising an
+    already-visible note doesn't bump its own modified_at either."""
+    board = NotepadWindow(Board(hidden=False), FakeManager())
+    before = board.board.modified_at
+
+    board.show_board()
+
+    assert board.board.modified_at == before
+
+
+def test_close_button_calls_hide_board(qapp):
+    board = NotepadWindow(Board(), FakeManager())
+
+    board.header.findChild(QToolButton).click()
+
+    assert board.board.hidden is True
+    assert board.isHidden()
 
 
 def test_board_with_one_small_note_shows_no_scrollbar(qapp):

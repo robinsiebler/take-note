@@ -140,6 +140,13 @@ class Board:
     h: int = 300
     created_at: str = field(default_factory=_now_iso)
     modified_at: str = field(default_factory=_now_iso)
+    # Session-only closing (the header's own x) used to be the only way
+    # to hide a board, and never survived a restart — every board reopened
+    # unconditionally on every launch regardless of whether it was closed
+    # before quitting. Explicit user request to persist this instead,
+    # unlike the single-note "Hide Note" feature, which stays deliberately
+    # session-only.
+    hidden: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
