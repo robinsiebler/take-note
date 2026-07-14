@@ -36,6 +36,17 @@ class TrayIcon(QSystemTrayIcon):
         new_board_action = self.menu.addAction("New Notepad")
         new_board_action.triggered.connect(lambda: manager.create_board())
 
+        # Rebuilt fresh every time the tray menu is about to open (not
+        # built once in __init__) — boards get created/deleted/shown/
+        # hidden throughout a session, and this is the simplest way to
+        # keep the list and each checkmark's visible/hidden state
+        # current without a separate change-signal wired to it. Mocked
+        # up 3 options as real rendered menus first (flat inline items,
+        # a plain submenu, a checkable submenu) — user picked a checkable
+        # submenu, toggling a board's own show/hide from its checkmark.
+        self.notepads_menu = self.menu.addMenu("Notepads")
+        self.menu.aboutToShow.connect(self._populate_notepads_menu)
+
         notes_manager_action = self.menu.addAction("Notes Manager…")
         notes_manager_action.triggered.connect(manager.open_notes_manager)
 
@@ -63,3 +74,33 @@ class TrayIcon(QSystemTrayIcon):
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.manager.create_note()
+
+    def _populate_notepads_menu(self):
+        self.notepads_menu.clear()
+        boards = list(self.manager.boards.values())
+        # Disables the "Notepads" item itself (greyed out, unopenable) in
+        # the main menu when there are no boards yet, rather than letting
+        # it open onto an empty submenu with nothing to show.
+        self.notepads_menu.setEnabled(bool(boards))
+        for board_window in boards:
+            action = self.notepads_menu.addAction(board_window.board.name)
+            action.setCheckable(True)
+            action.setChecked(board_window.isVisible())
+            # Connected after setChecked() above, not before — setChecked()
+            # only emits toggled() on an actual state change, but connecting
+            # first would still risk firing on the very first board whose
+            # real state happens to differ from a fresh QAction's own
+            # default (unchecked).
+            action.toggled.connect(lambda checked, bw=board_window: self._toggle_board(bw, checked))
+
+    def _toggle_board(self, board_window, checked: bool):
+        if checked:
+            # showNormal(), not show() — see NoteManager.open_notes_manager's
+            # own comment on why show() alone can't recover a minimized
+            # window; _open_board_from_tree() in notes_manager.py uses the
+            # exact same sequence for reopening a board from the tree.
+            board_window.showNormal()
+            board_window.raise_()
+            board_window.activateWindow()
+        else:
+            board_window.hide()
