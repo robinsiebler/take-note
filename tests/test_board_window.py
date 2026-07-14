@@ -4,7 +4,7 @@ from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
 
-from take_note.board_window import NotepadWindow
+from take_note.board_window import _TEXTURE_TILE_SIZE, _build_corkboard_texture, NotepadWindow
 from take_note.models import Board, Note, Settings
 from take_note.note_window import NoteWindow
 
@@ -18,6 +18,37 @@ class FakeManager:
         note.show()
         note.attach_to_board(board, pos=pos)
         return note
+
+
+def test_build_corkboard_texture_returns_expected_tile_size(qapp):
+    tile = _build_corkboard_texture("#fff59d")
+
+    assert tile.width() == _TEXTURE_TILE_SIZE
+    assert tile.height() == _TEXTURE_TILE_SIZE
+
+
+def test_build_corkboard_texture_is_deterministic_for_the_same_color(qapp):
+    """A fixed seed per color, not re-randomized on every call — QBrush
+    tiles this pixmap, so a re-seeded pattern each regeneration would
+    make already-visible tiles visibly shift on an unrelated repaint."""
+    first = _build_corkboard_texture("#90caf9")
+    second = _build_corkboard_texture("#90caf9")
+
+    assert first.toImage() == second.toImage()
+
+
+def test_build_corkboard_texture_differs_between_colors(qapp):
+    yellow = _build_corkboard_texture("#fff59d")
+    blue = _build_corkboard_texture("#90caf9")
+
+    assert yellow.toImage() != blue.toImage()
+
+
+def test_notepad_window_applies_texture_to_canvas(qapp):
+    board = NotepadWindow(Board(color="#fff59d"), FakeManager())
+
+    assert board.canvas._texture is not None
+    assert board.canvas._texture.toImage() == _build_corkboard_texture("#fff59d").toImage()
 
 
 def test_empty_board_canvas_matches_viewport_not_a_fixed_minimum(qapp):
