@@ -89,8 +89,9 @@
   closing the dialog) alongside OK/Cancel, and remembers its own
   window position across restarts. Opening it again while already
   open just raises/focuses the existing one (doesn't spawn a second).
-- Notepads: group notes onto a shared corkboard-style window that shows,
-  hides, and moves as one unit.
+- Notepads: group notes onto a shared corkboard-style window (with a
+  subtle grainy cork texture, not a flat fill) that shows, hides, and
+  moves as one unit.
 - Context menus and the color picker adapt to your system's light/dark
   theme; note colors themselves stay as you set them regardless of theme.
 - Embedded images: right-click → "Add picture…" (or "Replace picture…"

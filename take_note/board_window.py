@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import random
 from datetime import datetime, timezone
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
@@ -22,6 +24,39 @@ from .note_window import ICON_BUTTON_QSS, RADIUS, NoteWindow, get_menu_qss, head
 from .x11_wm import set_skip_taskbar
 
 HEADER_HEIGHT = 24
+
+# A small tileable pattern rather than a full-canvas-sized one — QBrush
+# tiles it natively (cheap, native Qt/GPU work), so this is only ever
+# rendered once per board color, never regenerated on resize.
+_TEXTURE_TILE_SIZE = 128
+
+
+def _build_corkboard_texture(base_color: str) -> QPixmap:
+    """Subtle noise grain, mocked up against 4 other options (flat/
+    current, crosshatch, noise+vignette, cork-fiber-blotches) as real
+    rendered images before writing this — user picked this one: distinct
+    from a flat fill without fighting note colors sitting on top, and
+    plainer than the crosshatch/blotch alternatives. A fixed seed keeps
+    the pattern stable across regenerations of the same color (matters
+    since QBrush tiles it — a re-seeded pattern each time would make
+    already-visible tiles visibly shift on an unrelated repaint)."""
+    base = QColor(base_color)
+    tile = QPixmap(_TEXTURE_TILE_SIZE, _TEXTURE_TILE_SIZE)
+    tile.fill(base)
+    painter = QPainter(tile)
+    painter.setPen(Qt.NoPen)
+    rng = random.Random(base_color)
+    darker = base.darker(122)
+    lighter = base.lighter(115)
+    for _ in range(_TEXTURE_TILE_SIZE * _TEXTURE_TILE_SIZE // 9):
+        x = rng.randint(0, _TEXTURE_TILE_SIZE - 1)
+        y = rng.randint(0, _TEXTURE_TILE_SIZE - 1)
+        speck = QColor(darker if rng.random() < 0.6 else lighter)
+        speck.setAlpha(rng.randint(18, 46))
+        painter.setBrush(speck)
+        painter.drawRect(x, y, 1, 1)
+    painter.end()
+    return tile
 
 
 def _now_iso() -> str:
@@ -85,7 +120,21 @@ class BoardCanvas(QWidget):
     def __init__(self, board_window: "NotepadWindow"):
         super().__init__()
         self.board_window = board_window
-        self.setAttribute(Qt.WA_StyledBackground, True)
+        # Not WA_StyledBackground — the corkboard texture is painted
+        # directly in paintEvent() below instead of via a stylesheet
+        # background-color, so the widget needs its own paint to actually
+        # run rather than relying on Qt's stylesheet-driven fill.
+        self._texture: QPixmap | None = None
+
+    def set_texture_color(self, color: str):
+        self._texture = _build_corkboard_texture(color)
+        self.update()
+
+    def paintEvent(self, event):
+        if self._texture is not None:
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), QBrush(self._texture))
+        super().paintEvent(event)
 
     def grow_to_fit(self):
         needed = self.board_window.scroll.viewport().size()
@@ -204,8 +253,12 @@ class NotepadWindow(QWidget):
             f"#boardFooter {{ background-color: {self.board.color}; "
             f"border-bottom-left-radius: {RADIUS}px; border-bottom-right-radius: {RADIUS}px; }}"
         )
+        # Flat fallback for the sliver of QScrollArea viewport that can
+        # show around the canvas before grow_to_fit() has run — the
+        # canvas itself (normally filling that whole viewport) paints the
+        # real corkboard texture, not this flat color.
         self.scroll.setStyleSheet(f"background-color: {self.board.color}; border: none;")
-        self.canvas.setStyleSheet(f"background-color: {self.board.color};")
+        self.canvas.set_texture_color(self.board.color)
 
     def rename(self):
         # The static QInputDialog.getText() convenience defaults to a
