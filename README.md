@@ -143,8 +143,6 @@ Features above rather than re-deriving it from history here.
 - Drag-and-drop of notes onto a Notepad (currently a right-click "Add to
   Notepad" menu action instead)
 - Thumbnail + open-full-size for oversized embedded pictures
-- Tray menu separators render as plain gaps (KDE's native tray menu
-  protocol doesn't pick up the app's own stylesheet — no clean fix found)
 
 **Distant future, not scoped:** cloud sync, a Markdown editing mode.
 
