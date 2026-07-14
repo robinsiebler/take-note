@@ -45,11 +45,15 @@ jobs:
       # PySide6 needs a handful of system shared libraries present even
       # under the offscreen QPA platform (no real display needed, but Qt
       # itself still links against these) — a bare ubuntu-latest runner
-      # doesn't have them by default.
+      # doesn't have them by default. libpulse0 specifically is needed
+      # just to import PySide6.QtMultimedia (used for the reminder sound
+      # effect) — confirmed live: a push without it failed every test job
+      # with "ImportError: libpulse.so.0: cannot open shared object
+      # file", even though nothing in the test suite actually plays audio.
       - name: Install Qt runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6 libpulse0
 
       - name: Install dependencies
         run: pip install -e . pytest

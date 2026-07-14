@@ -19,10 +19,13 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      # libpulse0 is needed just to import PySide6.QtMultimedia (used for
+      # the reminder sound effect) — see ci.yml's own copy of this step
+      # for the exact failure this avoids.
       - name: Install Qt runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6
+          sudo apt-get install -y libegl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libfreetype6 libpulse0
 
       - name: Install dependencies
         run: pip install -e . pytest build
