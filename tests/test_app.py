@@ -179,6 +179,26 @@ def test_fire_reminder_does_not_flash_when_already_always_on_top():
     note_window.winId.assert_not_called()
 
 
+def test_fire_reminder_plays_sound_when_enabled():
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    manager.settings = Settings(reminder_sound_enabled=True)
+
+    NoteManager._fire_reminder(manager, note_window)
+
+    manager._reminder_sound.play.assert_called_once()
+
+
+def test_fire_reminder_does_not_play_sound_when_disabled():
+    manager = _fake_manager([False])
+    note_window = next(iter(manager.notes.values()))
+    manager.settings = Settings(reminder_sound_enabled=False)
+
+    NoteManager._fire_reminder(manager, note_window)
+
+    manager._reminder_sound.play.assert_not_called()
+
+
 def test_fire_reminder_does_not_flash_for_board_attached_note():
     """A board-attached note is a plain child widget with no top-level
     window/WM state of its own — its raise_() above already reorders it

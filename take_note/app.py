@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QTimer, Signal
+from PySide6.QtCore import QObject, QPoint, QTimer, QUrl, Signal
+from PySide6.QtMultimedia import QSoundEffect
 from PySide6.QtWidgets import QApplication
 
 from . import autostart, storage
@@ -79,6 +81,15 @@ class NoteManager(QObject):
         self._reminder_timer.setInterval(REMINDER_CHECK_INTERVAL_MS)
         self._reminder_timer.timeout.connect(self._check_reminders)
         self._reminder_timer.start()
+
+        # Built once and reused (not a fresh QSoundEffect per fire) — it
+        # must stay alive for its async playback to actually complete, and
+        # loading the same short file over and over would be wasted work.
+        self._reminder_sound = QSoundEffect(self)
+        self._reminder_sound.setSource(
+            QUrl.fromLocalFile(str(Path(__file__).parent / "assets" / "reminder_chime.wav"))
+        )
+        self._reminder_sound.setVolume(0.72)
 
         self.tray = TrayIcon(self)
         self.tray.show()
@@ -538,6 +549,8 @@ class NoteManager(QObject):
             QTimer.singleShot(
                 REMINDER_FLASH_DURATION_MS, lambda: set_stays_on_top(win_id, False)
             )
+        if self.settings.reminder_sound_enabled:
+            self._reminder_sound.play()
         self._schedule_save()
 
     # -- lifecycle ---------------------------------------------------------

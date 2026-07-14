@@ -56,7 +56,8 @@
   you pick a past time) — a bell icon appears in the header while one's
   set, with a tooltip showing when it's due. When it comes due, the
   note raises itself to the front (unrolling or restoring it first if
-  needed), then clears itself — no repeat/recurrence, no desktop
+  needed) and plays a brief chime (toggleable in Settings, on by
+  default), then clears itself — no repeat/recurrence, no desktop
   notification. A reminder missed while the app was closed fires
   immediately on the next launch; one on a trashed note is skipped
   rather than fired, and doesn't fire later just because the note is

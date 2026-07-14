@@ -610,3 +610,18 @@ def test_result_settings_reflects_spell_check_checkbox(qapp, monkeypatch):
     result = dialog.result_settings()
 
     assert result.spell_check_enabled is True
+
+
+def test_reminder_sound_checkbox_reflects_settings(qapp):
+    dialog = SettingsDialog(Settings(reminder_sound_enabled=False))
+
+    assert not dialog.reminder_sound_check.isChecked()
+
+
+def test_result_settings_reflects_reminder_sound_checkbox(qapp):
+    dialog = SettingsDialog(Settings(reminder_sound_enabled=True))
+    dialog.reminder_sound_check.setChecked(False)
+
+    result = dialog.result_settings()
+
+    assert result.reminder_sound_enabled is False
