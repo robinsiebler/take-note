@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -1269,10 +1269,15 @@ def _patch_reminder_dialog(monkeypatch, local_dt, result):
     class level — unlike QMenu.exec, which Shiboken silently no-ops on).
     Setting date_time_edit inside the patched exec() (rather than before
     calling show_reminder_dialog()) is necessary since the real instance
-    only exists once show_reminder_dialog() constructs it."""
+    only exists once show_reminder_dialog() constructs it.
+
+    Explicitly selects the absolute-time radio — these callers are all
+    testing the absolute date/time path specifically, and a brand-new
+    reminder now defaults to the quick relative-minutes radio instead."""
 
     def fake_exec(self):
         if local_dt is not None:
+            self.absolute_radio.setChecked(True)
             self.date_time_edit.setDateTime(QDateTime(local_dt))
         return result
 
@@ -1293,6 +1298,56 @@ def test_show_reminder_dialog_sets_reminder_and_shows_icon(qapp, monkeypatch):
     expected = local_datetime_to_utc_iso(QDateTime(future).toPython())
     assert win.note.reminder_at == expected
     assert not win.header.reminder_btn.isHidden()
+
+
+def test_show_reminder_dialog_quick_minutes_sets_reminder(qapp, monkeypatch):
+    """The quick "remind me in N minutes" path computes off the real
+    current UTC instant directly (see show_reminder_dialog), not a
+    QDateTime round-trip — compared with a tolerance rather than an
+    exact value since real wall-clock time elapses between the dialog's
+    accept and this assertion."""
+    win = make_note_window("Some text")
+
+    def fake_exec(self):
+        self.quick_radio.setChecked(True)
+        self.minutes_spin.setValue(20)
+        return QDialog.Accepted
+
+    monkeypatch.setattr(_ReminderDialog, "exec", fake_exec)
+
+    win.show_reminder_dialog()
+
+    expected = datetime.now(timezone.utc) + timedelta(minutes=20)
+    actual = datetime.fromisoformat(win.note.reminder_at)
+    assert abs((actual - expected).total_seconds()) < 5
+
+
+def test_reminder_dialog_defaults_to_quick_mode_for_a_new_reminder(qapp):
+    dialog = _ReminderDialog(None)
+
+    assert dialog.quick_radio.isChecked()
+    assert not dialog.absolute_radio.isChecked()
+    assert dialog.minutes_spin.isEnabled()
+    assert not dialog.date_time_edit.isEnabled()
+
+
+def test_reminder_dialog_defaults_to_absolute_mode_when_editing(qapp):
+    existing = local_datetime_to_utc_iso(datetime.now() + timedelta(hours=1))
+    dialog = _ReminderDialog(existing)
+
+    assert dialog.absolute_radio.isChecked()
+    assert not dialog.quick_radio.isChecked()
+    assert dialog.date_time_edit.isEnabled()
+    assert not dialog.minutes_spin.isEnabled()
+
+
+def test_reminder_dialog_switching_mode_toggles_widget_enabled_state(qapp):
+    dialog = _ReminderDialog(None)
+
+    dialog.absolute_radio.setChecked(True)
+
+    assert dialog.date_time_edit.isEnabled()
+    assert not dialog.minutes_spin.isEnabled()
 
 
 def test_show_reminder_dialog_cancelled_does_not_change_reminder(qapp, monkeypatch):

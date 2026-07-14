@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import (
     QBuffer,
@@ -37,6 +37,7 @@ from PySide6.QtGui import (
     QTextListFormat,
 )
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDateTimeEdit,
     QDialog,
     QDialogButtonBox,
@@ -50,9 +51,11 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSizeGrip,
     QSizePolicy,
     QSpacerItem,
+    QSpinBox,
     QTextEdit,
     QToolButton,
     QToolTip,
@@ -908,9 +911,13 @@ class _ReminderDialog(QDialog):
     method's own docstring for the full palette-bleed explanation this
     dialog would suffer from too if given the note as a parent.
 
-    A QDateTimeEdit can't be "emptied" back to none the way a text field
-    can, so Clear Reminder is a separate button with its own distinct
-    result code rather than an equivalent of an empty string."""
+    Two mutually exclusive ways to pick the time, chosen via radio
+    buttons: a quick relative "remind me in N minutes" (listed first —
+    the fast path for a brand-new reminder) or the original absolute
+    date/time picker. A QDateTimeEdit can't be "emptied" back to none
+    the way a text field can, so Clear Reminder is a separate button
+    with its own distinct result code rather than an equivalent of an
+    empty string."""
 
     Cleared = QDialog.Accepted + 1
 
@@ -920,6 +927,24 @@ class _ReminderDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        self.mode_group = QButtonGroup(self)
+
+        quick_row = QHBoxLayout()
+        self.quick_radio = QRadioButton("Remind me in")
+        self.mode_group.addButton(self.quick_radio)
+        quick_row.addWidget(self.quick_radio)
+        self.minutes_spin = QSpinBox()
+        self.minutes_spin.setRange(1, 1440)
+        self.minutes_spin.setValue(15)
+        self.minutes_spin.setSuffix(" minutes")
+        quick_row.addWidget(self.minutes_spin)
+        quick_row.addStretch()
+        layout.addLayout(quick_row)
+
+        absolute_row = QHBoxLayout()
+        self.absolute_radio = QRadioButton("Remind me at")
+        self.mode_group.addButton(self.absolute_radio)
+        absolute_row.addWidget(self.absolute_radio)
         self.date_time_edit = QDateTimeEdit()
         self.date_time_edit.setCalendarPopup(True)
         self.date_time_edit.setMinimumDateTime(QDateTime.currentDateTime())
@@ -928,7 +953,31 @@ class _ReminderDialog(QDialog):
             self.date_time_edit.setDateTime(QDateTime(local_dt))
         else:
             self.date_time_edit.setDateTime(QDateTime.currentDateTime().addSecs(3600))
-        layout.addWidget(self.date_time_edit)
+        absolute_row.addWidget(self.date_time_edit)
+        layout.addLayout(absolute_row)
+
+        # Only one mode's own widget should actually be interactive at a
+        # time — the unselected one stays visible (so its own current
+        # value doesn't just vanish) but disabled.
+        self.quick_radio.toggled.connect(self.minutes_spin.setEnabled)
+        self.absolute_radio.toggled.connect(self.date_time_edit.setEnabled)
+
+        # Editing an existing reminder defaults to the absolute picker,
+        # prefilled with the time already set (preserves the original
+        # behavior); setting a brand-new one defaults to the quick
+        # relative option instead — the faster path for the common case.
+        if reminder_at is not None:
+            self.absolute_radio.setChecked(True)
+        else:
+            self.quick_radio.setChecked(True)
+        # setChecked(True) above only fires `toggled` for the radio that
+        # actually flips from its default unchecked state — the sibling
+        # radio was already unchecked, so its own `toggled(False)` never
+        # fires and the widget it controls would otherwise be left at
+        # its default enabled=True. Sync both explicitly instead of
+        # relying on that signal alone for the initial state.
+        self.minutes_spin.setEnabled(self.quick_radio.isChecked())
+        self.date_time_edit.setEnabled(self.absolute_radio.isChecked())
 
         if reminder_at is not None:
             clear_button = QPushButton("Clear Reminder")
@@ -1577,7 +1626,17 @@ class NoteWindow(QWidget):
         if result == _ReminderDialog.Cleared:
             self.note.reminder_at = None
         elif result == QDialog.Accepted:
-            self.note.reminder_at = local_datetime_to_utc_iso(dialog.date_time_edit.dateTime().toPython())
+            if dialog.quick_radio.isChecked():
+                # A plain duration added to the real current UTC instant —
+                # no local/UTC conversion involved at all, so there's no
+                # way for this path to reintroduce the class of bug
+                # local_datetime_to_utc_iso() exists to avoid.
+                due = datetime.now(timezone.utc) + timedelta(minutes=dialog.minutes_spin.value())
+                self.note.reminder_at = due.isoformat()
+            else:
+                self.note.reminder_at = local_datetime_to_utc_iso(
+                    dialog.date_time_edit.dateTime().toPython()
+                )
         else:
             return  # Cancelled — leave the existing reminder untouched.
         self.header.update_reminder_indicator(self.note.reminder_at)
