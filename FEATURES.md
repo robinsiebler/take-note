@@ -27,7 +27,10 @@
   live in the header's right-click menu and the hamburger (☰) button
   instead.
 - System tray icon: create notes/boards, open the Notes Manager, open
-  Settings, quit.
+  Settings, quit. A "Notepads" submenu lists every existing board by
+  name, each with a checkmark showing whether it's currently shown or
+  hidden — click one to toggle it directly, without going through the
+  Notes Manager.
 - Five global hotkeys, all user-configurable in Settings: create a new
   note (default `Meta+Alt+N`), open the Notes Manager (default
   `Meta+Alt+B`), and — with no default combo, opt-in only — show/hide
