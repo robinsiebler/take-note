@@ -262,6 +262,10 @@ class SettingsDialog(QDialog):
             # section headers above.
             form.addRow(unavailable_label)
 
+        self.reminder_sound_check = QCheckBox("Play a sound when a reminder fires")
+        self.reminder_sound_check.setChecked(self._settings.reminder_sound_enabled)
+        form.addRow(self.reminder_sound_check)
+
         return tab
 
     def _build_size_combo(
@@ -632,6 +636,7 @@ class SettingsDialog(QDialog):
                 self.bring_all_notes_to_front_hotkey_edit.keySequence().toString() or None
             ),
             spell_check_enabled=self.spell_check_check.isChecked(),
+            reminder_sound_enabled=self.reminder_sound_check.isChecked(),
             # No UI for these (yet) — carry them through unchanged rather
             # than silently resetting them to their dataclass defaults,
             # which building a brand-new Settings() here would otherwise

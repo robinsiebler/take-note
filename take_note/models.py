@@ -178,6 +178,7 @@ class Settings:
     roll_all_notes_hotkey: str | None = None
     bring_all_notes_to_front_hotkey: str | None = None
     spell_check_enabled: bool = False
+    reminder_sound_enabled: bool = True
 
     # None until the Notes Manager has actually been moved/resized once —
     # lets it fall back to NotesManagerWindow's own built-in default
