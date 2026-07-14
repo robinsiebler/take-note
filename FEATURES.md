@@ -35,13 +35,13 @@
   mirroring the tray menu's own bulk actions below.
 - Notes Manager (tray → "Notes Manager…", or its own global hotkey
   above): a sortable, searchable table of every note (Title/Preview/
-  Notepad/Date Modified/Tags columns) plus a tree of boards, tags, and
-  Trash to filter by, for finding a note (including a hidden one)
-  without hunting across the desktop. Deliberately excluded from the
-  taskbar, pager, and Alt-Tab switcher — reachable only via the tray or
-  its hotkey — since it was the one Take Note! window a real, unrelated
-  KDE Task Manager bug (confirmed not caused by this app) could
-  mislabel with another app's icon.
+  Notepad/Date Modified/Tags/Reminder columns) plus a tree of boards,
+  tags, and Trash to filter by, for finding a note (including a hidden
+  one) without hunting across the desktop. Deliberately excluded from
+  the taskbar, pager, and Alt-Tab switcher — reachable only via the
+  tray or its hotkey — since it was the one Take Note! window a real,
+  unrelated KDE Task Manager bug (confirmed not caused by this app)
+  could mislabel with another app's icon.
 - Trash: deleting a note (its × button, hamburger menu, or the Notes
   Browser) now moves it to Trash instead of deleting it outright —
   still shows a confirmation, just without the old scarier "permanently"
