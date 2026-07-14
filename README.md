@@ -137,9 +137,8 @@ Features above rather than re-deriving it from history here.
   show/hide all, roll up/down all, bring all to front) are
   user-configurable
 - The Notepad corkboard window's own chrome is still visually plain
-  compared to note windows, has no bulk "show all boards" action
-  (only per-board, via the tray's Notepads submenu), and doesn't
-  remember which boards were hidden across a restart
+  compared to note windows, and has no bulk "show all boards" action
+  (only per-board, via the tray's Notepads submenu)
 - Drag-and-drop of notes onto a Notepad (currently a right-click "Add to
   Notepad" menu action instead)
 - Thumbnail + open-full-size for oversized embedded pictures

@@ -54,7 +54,7 @@ class BoardHeader(QWidget):
         close_btn.setText("×")
         close_btn.setAutoRaise(True)
         close_btn.setToolTip("Hide board")
-        close_btn.clicked.connect(board_window.hide)
+        close_btn.clicked.connect(board_window.hide_board)
         layout.addWidget(close_btn)
 
     def mousePressEvent(self, event):
@@ -163,9 +163,15 @@ class NotepadWindow(QWidget):
 
         self.resize(board.w, board.h)
         self.move(board.x, board.y)
+        # Always show() first, even for a board loaded already-hidden —
+        # set_skip_taskbar() needs the window actually mapped to reliably
+        # stick (same fix/reasoning as NoteWindow's own construction for a
+        # trashed note), then hide() again right after if persisted hidden.
         self.show()
         set_skip_taskbar(int(self.winId()), True)
         self.canvas.grow_to_fit()
+        if board.hidden:
+            self.hide()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -249,6 +255,30 @@ class NotepadWindow(QWidget):
         reply = box.exec()
         if reply == QMessageBox.Yes:
             self.manager.delete_board(self)
+
+    # -- show/hide, persisted -------------------------------------------
+
+    def show_board(self):
+        # Only bumps modified_at on an actual hidden->visible transition —
+        # this is also called from _open_board_from_tree() to just bring
+        # an already-visible board to front (a plain re-focus, not a real
+        # edit), matching how raising an already-visible note doesn't
+        # bump its own modified_at either.
+        was_hidden = self.board.hidden
+        self.board.hidden = False
+        # showNormal(), not show() — recovers a genuinely minimized
+        # (window-manager-iconified) board, matching the same fix already
+        # used for reopening notes/the Notes Manager.
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if was_hidden:
+            self.mark_changed()
+
+    def hide_board(self):
+        self.board.hidden = True
+        self.hide()
+        self.mark_changed()
 
     # -- persistence hooks -------------------------------------------------
 

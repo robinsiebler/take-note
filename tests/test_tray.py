@@ -68,7 +68,10 @@ def test_notepads_menu_rebuilds_on_every_open(qapp):
     assert [a.text() for a in tray.notepads_menu.actions()] == ["Errands"]
 
 
-def test_checking_a_hidden_board_shows_and_raises_it(qapp):
+def test_checking_a_hidden_board_calls_show_board(qapp):
+    """show_board() (not raw showNormal()/raise_()/activateWindow()) —
+    also persists board.hidden = False, so toggling here is remembered
+    across a restart, same as toggling via the board's own ×."""
     board_window = _fake_board_window("Work", visible=False)
     manager = _fake_manager({board_window.board.id: board_window})
     tray = TrayIcon(manager)
@@ -77,13 +80,11 @@ def test_checking_a_hidden_board_shows_and_raises_it(qapp):
 
     action.setChecked(True)
 
-    board_window.showNormal.assert_called_once()
-    board_window.raise_.assert_called_once()
-    board_window.activateWindow.assert_called_once()
-    board_window.hide.assert_not_called()
+    board_window.show_board.assert_called_once()
+    board_window.hide_board.assert_not_called()
 
 
-def test_unchecking_a_visible_board_hides_it(qapp):
+def test_unchecking_a_visible_board_calls_hide_board(qapp):
     board_window = _fake_board_window("Work", visible=True)
     manager = _fake_manager({board_window.board.id: board_window})
     tray = TrayIcon(manager)
@@ -92,5 +93,5 @@ def test_unchecking_a_visible_board_hides_it(qapp):
 
     action.setChecked(False)
 
-    board_window.hide.assert_called_once()
-    board_window.showNormal.assert_not_called()
+    board_window.hide_board.assert_called_once()
+    board_window.show_board.assert_not_called()

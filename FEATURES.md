@@ -93,7 +93,10 @@
   window position across restarts. Opening it again while already
   open just raises/focuses the existing one (doesn't spawn a second).
 - Notepads: group notes onto a shared corkboard-style window that shows,
-  hides, and moves as one unit.
+  hides, and moves as one unit. Closing one (its own × or the tray's
+  Notepads submenu) is remembered across a restart — it stays closed
+  until explicitly reopened, instead of every board always reappearing
+  on every launch.
 - Context menus and the color picker adapt to your system's light/dark
   theme; note colors themselves stay as you set them regardless of theme.
 - Embedded images: right-click → "Add picture…" (or "Replace picture…"

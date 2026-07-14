@@ -469,6 +469,9 @@ def test_double_clicking_a_note_restores_it_if_minimized(qapp):
 
 
 def test_double_clicking_a_board_in_the_tree_restores_it_if_minimized(qapp):
+    """show_board() (not raw showNormal()/raise_()/activateWindow()) —
+    also persists board.hidden = False, so reopening a closed board from
+    the tree is remembered across a restart too."""
     board_window = _board_window(name="Work")
     manager = _fake_manager(boards={board_window.board.id: board_window})
     browser = NotesManagerWindow(manager)
@@ -476,9 +479,7 @@ def test_double_clicking_a_board_in_the_tree_restores_it_if_minimized(qapp):
 
     browser._open_board_from_tree(item, 0)
 
-    board_window.showNormal.assert_called_once()
-    board_window.raise_.assert_called_once()
-    board_window.activateWindow.assert_called_once()
+    board_window.show_board.assert_called_once()
 
 
 def test_table_allows_extended_selection(qapp):

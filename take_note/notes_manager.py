@@ -546,8 +546,7 @@ class NotesManagerWindow(QWidget):
         board_window = self.manager.boards.get(board_id)
         if board_window is None:
             return
-        # showNormal(), not show() — see NoteManager.open_notes_manager's
-        # own comment on why show() alone can't recover a minimized window.
-        board_window.showNormal()
-        board_window.raise_()
-        board_window.activateWindow()
+        # Also persists board.hidden = False, so double-clicking a
+        # closed board here (not just the tray's Notepads submenu) marks
+        # it as no-longer-closed for next launch too.
+        board_window.show_board()
