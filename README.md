@@ -149,8 +149,7 @@ Features above rather than re-deriving it from history here.
   visual-only — raising the note itself), and a Notes Manager column
   showing when a note's reminder will fire
 
-**Distant future, not scoped:** cloud sync, note "skins" / a Markdown
-editing mode.
+**Distant future, not scoped:** cloud sync, a Markdown editing mode.
 
 See [docs/PLAN.MD](docs/PLAN.MD) for the original pre-implementation design
 plan (historical reference; some details evolved during implementation).
