@@ -3,6 +3,15 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] - 2026-07-14
+
+### Added
+- Notepad corkboard windows now have a subtle grainy texture instead
+  of a flat solid-color fill.
+- Closing a Notepad (its own × or the tray's Notepads submenu) is now
+  remembered across a restart — it stays closed until explicitly
+  reopened, instead of every board always reappearing on every launch.
+
 ## [1.7.0] - 2026-07-14
 
 ### Added
@@ -112,6 +121,7 @@ First tagged release. Highlights:
 - System tray for quick actions (new note/board, Notes Browser,
   Settings, bulk show/hide/roll).
 
+[1.8.0]: https://github.com/robinsiebler/take-note/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/robinsiebler/take-note/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/robinsiebler/take-note/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/robinsiebler/take-note/compare/v1.3.0...v1.5.0
