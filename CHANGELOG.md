@@ -3,6 +3,22 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.0] - 2026-07-15
+
+### Added
+- Interactive checklists: a new "Checklist" option in the Bullets &
+  Numbering submenu. Click a checkbox to toggle it, with a
+  strikethrough/muted-grey look for checked items.
+- Notepads: a "Change Notepad Color…" option in the right-click menu
+  recolors the whole board (header, texture, and scrollbar together).
+- Notepad scrollbars are now a flat, rounded style matching the rest
+  of the app's chrome, instead of the platform's native scrollbar.
+
+### Fixed
+- Converting a single list item's style while it was part of a larger
+  shared bulleted/numbered/checklist list silently converted every
+  other item in that list too, instead of just the one selected.
+
 ## [1.8.0] - 2026-07-14
 
 ### Added

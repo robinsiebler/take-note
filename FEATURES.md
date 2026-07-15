@@ -2,9 +2,11 @@
 
 - Colored sticky notes with rounded corners, rich text (a "Font…" action
   opens the native font-family/size/style dialog; plus quick bold/italic/
-  underline/strikethrough, alignment, and bullets & numbering with
-  indent/dedent via a right-click menu — Font Style and Bullets &
-  Numbering both show which style the current selection already has),
+  underline/strikethrough, alignment, and bullets & numbering (including
+  interactive checklists — click a checkbox to toggle it, complete with
+  strikethrough on checked items) with indent/dedent via a right-click
+  menu — Font Style and Bullets & Numbering both show which style the
+  current selection already has),
   plus a "Font Color…" swatch picker (including black) for selected
   text, always-on-top (toggleable per note), adjustable transparency,
   freely movable and resizable, collapsible to just the header ("roll
@@ -97,7 +99,9 @@
   moves as one unit. Closing one (its own × or the tray's Notepads
   submenu) is remembered across a restart — it stays closed until
   explicitly reopened, instead of every board always reappearing on
-  every launch.
+  every launch. Right-click → "Change Notepad Color…" recolors the
+  whole board (header, texture, and scrollbar together); its own
+  flat, rounded scrollbar replaces the platform's native one.
 - Context menus and the color picker adapt to your system's light/dark
   theme; note colors themselves stay as you set them regardless of theme.
 - Embedded images: right-click → "Add picture…" (or "Replace picture…"
