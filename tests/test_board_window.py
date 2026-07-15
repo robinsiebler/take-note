@@ -5,7 +5,7 @@ from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox, QToolButton
 
 from take_note.board_window import _TEXTURE_TILE_SIZE, _build_corkboard_texture, NotepadWindow
-from take_note.models import Board, Note, Settings
+from take_note.models import FONT_SWATCHES, Board, Note, Settings
 from take_note.note_window import NoteWindow
 
 
@@ -211,6 +211,60 @@ def test_detached_note_move_does_not_touch_any_canvas(qapp):
     note.move(300, 300)  # must not raise
 
     assert note.note.board_id is None
+
+
+def test_set_color_updates_board_reapplies_chrome_and_marks_changed(qapp):
+    board = NotepadWindow(Board(), FakeManager())
+    before_mtime = board.board.modified_at
+    events = []
+    board.changed.connect(lambda: events.append(board.board.color))
+
+    board.set_color(FONT_SWATCHES[3])
+
+    assert board.board.color == FONT_SWATCHES[3]
+    assert board.board.modified_at != before_mtime
+    assert events == [FONT_SWATCHES[3]]
+    from take_note.board_window import header_shade
+
+    assert header_shade(FONT_SWATCHES[3]) in board.header.styleSheet()
+    assert FONT_SWATCHES[3] in board.scroll.styleSheet()
+
+
+def test_change_notepad_color_action_opens_swatch_popup_and_applies_pick(qapp):
+    """Same nested-popup pattern already proven by
+    test_right_click_menu_triggers_new_note_and_leaves_a_child_behind (the
+    outer context menu) and note_window.py's own
+    test_show_font_color_menu_uses_font_swatches_and_applies_pick (the
+    swatch popup itself) — combined here since "Change Notepad Color…"
+    opens a second, nested popup from within the first, and QMenu.exec()'s
+    own nested event loop can't be driven by monkeypatching exec()
+    (Shiboken-wrapped, silently no-ops), only by scheduling clicks ahead of
+    time via QTimer so they fire once each nested loop is actually running."""
+    board = NotepadWindow(Board(), FakeManager())
+    before_mtime = board.board.modified_at
+
+    def pick_swatch():
+        popup = QApplication.activePopupWidget()
+        assert popup is not None, "color swatch popup never opened"
+        buttons = popup.findChildren(QToolButton)
+        assert len(buttons) == len(FONT_SWATCHES)
+        buttons[3].click()
+
+    def pick_color_action():
+        menu = QApplication.activePopupWidget()
+        assert menu is not None, "context menu never opened"
+        action = next(a for a in menu.actions() if a.text() == "Change Notepad Color…")
+        QTimer.singleShot(0, pick_swatch)
+        action.trigger()  # blocks inside show_color_menu()'s own nested exec()
+        menu.close()
+
+    click_pos = board.canvas.mapToGlobal(QPoint(60, 50))
+    QTimer.singleShot(0, pick_color_action)
+    event = QContextMenuEvent(QContextMenuEvent.Mouse, board.canvas.mapFromGlobal(click_pos), click_pos)
+    board.canvas.contextMenuEvent(event)  # blocks until pick_color_action() closes the menu
+
+    assert board.board.color == FONT_SWATCHES[3]
+    assert board.board.modified_at != before_mtime
 
 
 def test_right_click_menu_triggers_new_note_and_leaves_a_child_behind(qapp):
