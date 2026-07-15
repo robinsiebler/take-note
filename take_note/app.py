@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QPoint, QTimer, QUrl, Signal
 from PySide6.QtMultimedia import QSoundEffect
 from PySide6.QtWidgets import QApplication
 
-from . import autostart, storage
+from . import autostart, spellcheck, storage
 from .board_window import NotepadWindow
 from .hotkey import HotkeyListener, parse_shortcut
 from .models import SWATCHES, Board, Note, Settings
@@ -113,6 +113,11 @@ class NoteManager(QObject):
     def load_from_disk(self):
         notes, boards, settings = storage.load_all()
         self.settings = settings
+        # Before any note is constructed below — NoteWindow.__init__ may
+        # attach a spell_highlighter immediately (if spell_check_enabled),
+        # and that highlighter's first pass needs the ignore list already
+        # replayed into Enchant's session dict, not applied after the fact.
+        self._replay_ignored_words()
 
         # Boards first so each note's board canvas already exists by the
         # time a note with a board_id needs to be parented into it.
@@ -151,6 +156,17 @@ class NoteManager(QObject):
         # so "missed while closed" and "came due while running" share one
         # code path.
         self._check_reminders()
+
+    def _replay_ignored_words(self):
+        """Enchant's own spellcheck.ignore() is session-only by itself
+        (add_to_session, forgotten on the next launch) — Settings.
+        ignored_words is where this app persists the permanent-within-
+        Take-Note! list across restarts (see that field's own docstring
+        in models.py), and replaying every word through ignore() here is
+        what actually makes it *feel* permanent rather than the field
+        just sitting on disk unused."""
+        for word in self.settings.ignored_words:
+            spellcheck.ignore(word)
 
     def _wire_note(self, note_window: NoteWindow):
         self.notes[note_window.note.id] = note_window

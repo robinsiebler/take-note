@@ -424,6 +424,46 @@ def test_load_from_disk_seeds_cascade_offset_from_standalone_note_count(qapp, mo
     assert manager._new_note_cascade_offset == app_module.CASCADE_OFFSET * 2
 
 
+def test_replay_ignored_words_calls_spellcheck_ignore_for_each_word(qapp, monkeypatch):
+    """Settings.ignored_words is Take Note!'s own persisted record of
+    permanently-ignored words; spellcheck.ignore() itself only affects
+    Enchant's in-memory session dict, forgotten on the next launch. This
+    is what actually replays the persisted list back into that session
+    dict on every launch, making "Ignore" feel permanent-within-Take-
+    Note! from the user's perspective."""
+    calls = []
+    monkeypatch.setattr(app_module.spellcheck, "ignore", lambda word: calls.append(word))
+    settings = Settings(ignored_words=["wrold", "teh"])
+    manager = _fake_manager_for_create_note(settings)
+
+    NoteManager._replay_ignored_words(manager)
+
+    assert calls == ["wrold", "teh"]
+
+
+def test_load_from_disk_replays_ignored_words(qapp, monkeypatch):
+    """Orchestration check (same style as the cascade-offset/reminders
+    tests above) — load_from_disk() must call the replay before any note
+    is constructed, since a note's own __init__ may attach a spell
+    highlighter immediately if spell_check_enabled, and that highlighter's
+    first pass needs the ignore list already in place."""
+    settings = Settings(ignored_words=["wrold"])
+    monkeypatch.setattr(app_module.storage, "load_all", lambda: ([], [], settings))
+    calls = []
+    monkeypatch.setattr(app_module.spellcheck, "ignore", lambda word: calls.append(word))
+    manager = _fake_manager_for_create_note(settings)
+    # A bare Mock()'s self._replay_ignored_words() would resolve to an
+    # auto-generated stub, not the real method under test — same gotcha
+    # already documented for _fire_reminder above, same fix.
+    manager._replay_ignored_words = lambda: NoteManager._replay_ignored_words(manager)
+
+    NoteManager.load_from_disk(manager)
+
+    assert calls == ["wrold"]
+
+    manager.create_note = manager.create_note  # no-op, keeps intent obvious
+
+
 def test_load_from_disk_checks_reminders_once_after_loading(qapp, monkeypatch):
     """Must run after every NoteWindow is constructed and wired, not
     during __init__ (too early, no note windows exist yet) — catches a

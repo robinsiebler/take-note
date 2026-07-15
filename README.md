@@ -85,6 +85,13 @@ extra to the editable install instead: `.venv/bin/pip install -e ".[spellcheck]"
 If either half is missing, the checkbox in Settings is disabled with an
 explanatory label rather than silently doing nothing.
 
+> **Note:** Right-click → **Ignore** on a flagged word is permanent
+> within Take Note! — remembered across restarts — but scoped to this
+> app only; it never touches your system's real Enchant dictionary. If
+> you want a word recognized as correctly spelled in *every*
+> Enchant-using app on your system, not just here, use **Add to
+> Dictionary** instead.
+
 ## Known limitation: Wayland
 
 Wayland's core protocol doesn't let an app position its own top-level

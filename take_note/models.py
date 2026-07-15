@@ -185,6 +185,15 @@ class Settings:
     roll_all_notes_hotkey: str | None = None
     bring_all_notes_to_front_hotkey: str | None = None
     spell_check_enabled: bool = False
+    # Take Note!-only permanent ignore list — Enchant itself only offers
+    # session-only (add_to_session) or system-wide-permanent (add(), which
+    # writes to the user's real personal dictionary, shared by every
+    # Enchant-using app). This is the middle ground: persisted here, then
+    # replayed through spellcheck.ignore() on every launch (see
+    # NoteManager._replay_ignored_words()) so it behaves like a permanent
+    # ignore from the user's perspective without ever touching Enchant's
+    # own dictionary file.
+    ignored_words: list[str] = field(default_factory=list)
     reminder_sound_enabled: bool = True
 
     # None until the Notes Manager has actually been moved/resized once —

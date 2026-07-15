@@ -68,8 +68,14 @@ def suggest(word: str) -> list[str]:
 
 
 def ignore(word: str) -> None:
-    """Session-only: check() treats `word` as correctly spelled for the
-    rest of this process's lifetime, forgotten on the next launch."""
+    """By itself, session-only: check() treats `word` as correctly
+    spelled for the rest of this process's lifetime, forgotten on the
+    next launch. NoteWindow._ignore_word() also persists `word` to
+    Settings.ignored_words and NoteManager replays every word there
+    through this same function on every launch (see
+    NoteManager._replay_ignored_words()) — the combination is what
+    actually makes "Ignore" behave as permanent-within-Take-Note!, not
+    this function alone."""
     d = _get_dict()
     if d is not None and word:
         d.add_to_session(word)
