@@ -369,6 +369,45 @@ def test_multi_select_delete_asks_once_and_trashes_every_selected_note(qapp, mon
     manager.trash_note.assert_any_call(n2)
 
 
+def test_switching_tree_filter_clears_the_table_selection(qapp):
+    """Regression, reported live: selecting N notes while viewing All
+    Notes, then clicking Trash in the tree, left N notes looking selected
+    there too — same root cause as the delete-selection fix below (row/
+    column index-based selection surviving a table repopulation with
+    completely different content at those same indices), just triggered
+    by switching filters instead of a delete."""
+    n1 = _note_window(title="Groceries")
+    n2 = _note_window(title="Taxes")
+    manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
+    browser = NotesManagerWindow(manager)
+    browser.table.selectAll()
+    assert len(browser.table.selectionModel().selectedRows()) == 2
+
+    _select_tree_item(browser, "Trash")
+
+    assert browser.table.selectionModel().selectedRows() == []
+
+
+def test_deleting_selected_notes_clears_the_table_selection(qapp, monkeypatch):
+    """Regression, reported live: deleting several selected notes left
+    whatever notes now occupied those same row indices looking selected,
+    even though the user never touched them — QTableWidget's selection
+    model tracks selection by row/column index, not by which
+    QTableWidgetItem object occupies it, and a live refresh after the
+    delete only ever replaces items at each surviving index, never clears
+    which indices were marked selected."""
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    n1 = _note_window(title="Groceries")
+    n2 = _note_window(title="Taxes")
+    manager = _fake_manager(notes={n1.note.id: n1, n2.note.id: n2})
+    browser = NotesManagerWindow(manager)
+    browser.table.selectAll()
+
+    browser._delete_selected_notes()
+
+    assert browser.table.selectionModel().selectedRows() == []
+
+
 def _select_tree_item(browser: NotesManagerWindow, label: str):
     for i in range(browser.tree.topLevelItemCount()):
         item = browser.tree.topLevelItem(i)
@@ -390,6 +429,22 @@ def test_delete_selected_note_in_trash_view_deletes_permanently(qapp, monkeypatc
 
     manager.delete_note.assert_called_once_with(n1)
     manager.trash_note.assert_not_called()
+
+
+def test_deleting_permanently_also_clears_the_table_selection(qapp, monkeypatch):
+    """Same fix as test_deleting_selected_notes_clears_the_table_selection,
+    covering the Trash view's separate _confirm_and_delete_permanently
+    code path."""
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    n1 = _note_window(title="Groceries", deleted_at="2026-01-01T00:00:00+00:00")
+    manager = _fake_manager(notes={n1.note.id: n1})
+    browser = NotesManagerWindow(manager)
+    _select_tree_item(browser, "Trash")
+    browser.table.selectRow(0)
+
+    browser._delete_selected_notes()
+
+    assert browser.table.selectionModel().selectedRows() == []
 
 
 def test_restore_selected_notes_calls_manager_restore_note(qapp):

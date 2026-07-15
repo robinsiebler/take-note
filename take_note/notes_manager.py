@@ -152,7 +152,7 @@ class NotesManagerWindow(QWidget):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.tree.currentItemChanged.connect(lambda *_: self._apply_filter())
+        self.tree.currentItemChanged.connect(self._on_tree_filter_changed)
         self.tree.itemDoubleClicked.connect(self._open_board_from_tree)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_tree_context_menu)
@@ -313,6 +313,19 @@ class NotesManagerWindow(QWidget):
         self.tree.blockSignals(False)
         self._apply_filter()
 
+    def _on_tree_filter_changed(self, *_):
+        """Reported live: selecting N notes while viewing All Notes, then
+        clicking Trash in the tree, showed N notes selected there too —
+        same root cause as _clear_table_selection_after_delete (row/column
+        index-based selection surviving a table repopulation with
+        completely different content at those same indices), just
+        triggered by switching filters instead of a delete. Switching
+        which notes the table is even showing should never carry an old
+        selection over, same convention as switching folders in a file
+        manager clearing the file selection."""
+        self.table.clearSelection()
+        self._apply_filter()
+
     def _current_tree_filter(self) -> str:
         item = self.tree.currentItem()
         if item is None:
@@ -461,6 +474,7 @@ class NotesManagerWindow(QWidget):
         if reply == QMessageBox.Yes:
             for note_window in note_windows:
                 self.manager.trash_note(note_window)
+            self._clear_table_selection_after_delete()
 
     def _confirm_and_delete_permanently(self, note_windows):
         if len(note_windows) == 1:
@@ -473,6 +487,19 @@ class NotesManagerWindow(QWidget):
         if reply == QMessageBox.Yes:
             for note_window in note_windows:
                 self.manager.delete_note(note_window)
+            self._clear_table_selection_after_delete()
+
+    def _clear_table_selection_after_delete(self):
+        """Reported live: deleting several selected notes left whatever
+        notes now occupy those same row indices looking selected, even
+        though the user never touched them. QTableWidget's selection model
+        tracks selection by row/column index, not by the QTableWidgetItem
+        object occupying it — _apply_filter()'s setRowCount()+setItem()
+        calls replace the items at each surviving index but never clear
+        which indices were marked selected, so a deleted row's old
+        "selected" flag falls straight onto whichever note now happens to
+        land at that same index once the table shrinks."""
+        self.table.clearSelection()
 
     # -- context menus -----------------------------------------------------
 
