@@ -130,26 +130,19 @@ Notes and boards are stored as a single JSON file at
 Everything originally planned for v1-v3 (bullets & numbering, note
 transparency, a font picker, hyperlinks, embedded images, in-note Find,
 Lock Note, Note title, "Stick to Window", bulk tray actions, the Notes
-Browser, tags, and a manual test plan under `test_cases/`) is done — see
-Features above rather than re-deriving it from history here.
+Browser, tags, and a manual test plan under `test_cases/`) is done, and
+so is everything added since (interactive checklists, Notepad color and
+texture, Reminders, spell check) — see Features above rather than
+re-deriving it from history here.
 
 **Still open, lower priority:**
-- Interactive checklists inside notes (needs a custom `QTextObjectInterface`,
-  unlike bullets/numbering above)
-- Note-color/font-color picker popup: corners and border are already
-  rounded; the swatch layout/background styling itself is still an open
-  design question
-- Configurable hotkeys for in-app actions (Bold/Italic/Add Title etc.) —
-  currently only the five global hotkeys (new note, open Notes Manager,
-  show/hide all, roll up/down all, bring all to front) are
-  user-configurable
 - The Notepad corkboard window has no bulk "show all boards" action
   (only per-board, via the tray's Notepads submenu)
-- Drag-and-drop of notes onto a Notepad (currently a right-click "Add to
-  Notepad" menu action instead)
-- Thumbnail + open-full-size for oversized embedded pictures
 
-**Distant future, not scoped:** cloud sync, a Markdown editing mode.
+**Distant future, not scoped:** cloud sync, a Markdown editing mode,
+drag-and-drop of notes onto a Notepad (currently a right-click "Add to
+Notepad" menu action instead), thumbnail + open-full-size for oversized
+embedded pictures.
 
 See [docs/PLAN.MD](docs/PLAN.MD) for the original pre-implementation design
 plan (historical reference; some details evolved during implementation).
