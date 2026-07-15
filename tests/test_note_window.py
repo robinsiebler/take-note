@@ -2064,6 +2064,42 @@ def test_detect_url_span_returns_none_for_bare_domain_without_scheme():
     assert _detect_url_span("Visit www.example.com today", offset=8) is None
 
 
+def test_detect_url_span_rejects_a_comma_where_a_dot_belongs():
+    """Regression, reported live: "http://www,google.com" (a typo — a
+    stray comma instead of a period) still linkified despite being
+    obviously broken, since the old check only looked for the http(s)://
+    scheme, never validating the host at all."""
+    text = "See http://www,google.com for more"
+    assert _detect_url_span(text, offset=6) is None
+
+
+def test_detect_url_span_accepts_a_real_looking_domain():
+    url = "http://www.google.com"
+    text = f"See {url} for more"
+    span = _detect_url_span(text, offset=6)
+    assert span == (text.index(url), text.index(url) + len(url), url)
+
+
+def test_detect_url_span_accepts_a_url_with_path_query_and_port():
+    url = "https://example.com:8080/path?query=1"
+    text = f"See {url} for more"
+    span = _detect_url_span(text, offset=6)
+    assert span == (text.index(url), text.index(url) + len(url), url)
+
+
+def test_detect_url_span_accepts_an_ip_address_host():
+    url = "http://192.168.1.1/admin"
+    text = f"See {url} for more"
+    span = _detect_url_span(text, offset=6)
+    assert span == (text.index(url), text.index(url) + len(url), url)
+
+
+def test_detect_url_span_rejects_a_single_label_host():
+    """Accepted tradeoff of this simple a check — see _HOST_PATTERN's own
+    docstring."""
+    assert _detect_url_span("See http://localhost for more", offset=6) is None
+
+
 def test_auto_linkify_turns_a_plain_url_into_a_real_link_at_right_click(qapp):
     """Backlog item 22: a URL typed as plain text (never run through the
     Hyperlink… dialog) becomes a real link the moment it's right-clicked
@@ -2121,6 +2157,84 @@ def test_auto_linkify_does_nothing_on_an_existing_link(qapp):
     check = win.body.textCursor()
     check.movePosition(QTextCursor.Start)
     assert check.charFormat().anchorHref() == "https://custom-url.example"
+
+
+def test_typing_a_space_after_a_link_does_not_extend_it(qapp):
+    """Regression, reported live: linkifying a URL then typing a space
+    right after it (still on the same line) produced a space that was
+    itself part of the link — underlined, colored, and sharing its href.
+    A collapsed cursor's format comes from the character immediately
+    before it, which right after a link's last character is still that
+    link's own anchor format."""
+    url = "https://example.com/page"
+    win = make_note_window(url)
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+    win._auto_linkify_at_cursor()
+    # Auto-linkify only formats the URL span; it doesn't move the
+    # widget's own cursor, so re-set it to the end to simulate the user
+    # actually clicking/arrowing there afterward — the real repro step.
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+
+    win.body.insertPlainText(" hello")
+
+    check = win.body.textCursor()
+    check.setPosition(len(url))
+    check.setPosition(len(url) + len(" hello"), QTextCursor.KeepAnchor)
+    fmt = check.charFormat()
+    assert fmt.isAnchor() is False
+    assert fmt.fontUnderline() is False
+
+
+def test_pressing_enter_after_a_link_does_not_extend_it(qapp):
+    """Same bug, reported live via a second repro: pressing Enter right
+    after a linkified URL (instead of typing a space on the same line)
+    produced a brand-new block whose own ambient format was still the
+    link's anchor formatting, so anything typed there came out
+    underlined/colored and sharing the link's href too."""
+    url = "https://example.com/page"
+    win = make_note_window(url)
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+    win._auto_linkify_at_cursor()
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+    win.body.insertPlainText("hello")
+
+    last_block = win.body.document().lastBlock()
+    check = QTextCursor(last_block)
+    check.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    fmt = check.charFormat()
+    assert fmt.isAnchor() is False
+    assert fmt.fontUnderline() is False
+
+
+def test_typing_inside_an_existing_link_is_left_alone(qapp):
+    """Guard against over-triggering: a cursor genuinely inside a link's
+    own text (anchored on both sides, not at the boundary) is legitimate
+    — editing there shouldn't have its anchor formatting stripped."""
+    url = "https://example.com/page"
+    win = make_note_window(url)
+    fmt = QTextCharFormat()
+    fmt.setAnchor(True)
+    fmt.setAnchorHref(url)
+    fmt.setFontUnderline(True)
+    select_all(win)
+    win.body.textCursor().mergeCharFormat(fmt)
+
+    cursor = win.body.textCursor()
+    cursor.setPosition(5)  # mid-way through the URL, anchored on both sides
+    win.body.setTextCursor(cursor)
+
+    assert win.body.currentCharFormat().isAnchor() is True
 
 
 def test_auto_linkify_then_menu_shows_edit_label_not_insert(qapp):
