@@ -3,6 +3,15 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.10.1] - 2026-07-15
+
+### Fixed
+- Launch at login wrote a broken exec path (`/usr/bin/take-note`,
+  which doesn't exist) for the documented `pip install --user`
+  install method, silently failing to launch the app at login. Now
+  resolves the real installed location via `PATH` instead of assuming
+  it sits next to the running Python interpreter.
+
 ## [1.10.0] - 2026-07-15
 
 ### Added
