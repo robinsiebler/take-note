@@ -2749,7 +2749,20 @@ class NoteWindow(QWidget):
         self.mark_changed()
 
     def _ignore_word(self, word: str):
+        """"Ignore" is now permanent-within-Take-Note! rather than
+        session-only — persisted to Settings.ignored_words (replayed on
+        every launch by NoteManager._replay_ignored_words()) rather than
+        just Enchant's in-memory session dict, so it's remembered without
+        ever touching Enchant's own system-wide personal dictionary the
+        way "Add to Dictionary" does. Directly mutates self.manager.
+        settings and calls _schedule_save() rather than mark_changed():
+        this is a manager-level setting, not an edit to this particular
+        note, matching the same direct-mutation pattern already used for
+        window-geometry persistence in notes_manager.py."""
         spellcheck.ignore(word)
+        if word not in self.manager.settings.ignored_words:
+            self.manager.settings.ignored_words.append(word)
+            self.manager._schedule_save()
         self._rehighlight_open_notes()
 
     def _add_word_to_dictionary(self, word: str):

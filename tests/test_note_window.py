@@ -3553,6 +3553,9 @@ class _SpellCheckManager:
     def __init__(self, spell_check_enabled=True):
         self.settings = Settings(spell_check_enabled=spell_check_enabled)
 
+    def _schedule_save(self):
+        pass
+
 
 def test_attaching_spell_highlighter_to_existing_content_does_not_mark_note_changed(qapp, monkeypatch):
     """The regression this feature's whole design is built around:
@@ -3782,6 +3785,48 @@ def test_clicking_ignore_calls_spellcheck_ignore_with_the_word(qapp, monkeypatch
     ignore_action.trigger()
 
     assert calls == ["wrold"]
+
+
+def test_ignoring_a_word_persists_it_to_settings_and_schedules_a_save(qapp, monkeypatch):
+    """"Ignore" is permanent-within-Take-Note! now, not session-only —
+    persisted to Settings.ignored_words (replayed on every launch by
+    NoteManager._replay_ignored_words()) rather than just Enchant's
+    in-memory session dict."""
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: [])
+    monkeypatch.setattr(spellcheck, "ignore", lambda word: None)
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    save_calls = []
+    manager._schedule_save = lambda: save_calls.append(True)
+    win = NoteWindow(Note(html="<p>hello wrold today</p>"), manager=manager)
+    caret = win.body.textCursor()
+    caret.setPosition(8)
+    win.body.setTextCursor(caret)
+
+    menu = QMenu()
+    win.populate_text_menu(menu)
+    ignore_action = next(a for a in menu.actions() if a.text() == "Ignore")
+    ignore_action.trigger()
+
+    assert manager.settings.ignored_words == ["wrold"]
+    assert save_calls == [True]
+
+
+def test_ignoring_the_same_word_twice_does_not_duplicate_it_in_settings(qapp, monkeypatch):
+    monkeypatch.setattr(spellcheck, "is_available", lambda: True)
+    monkeypatch.setattr(spellcheck, "check", lambda word: word != "wrold")
+    monkeypatch.setattr(spellcheck, "suggest", lambda word: [])
+    monkeypatch.setattr(spellcheck, "ignore", lambda word: None)
+
+    manager = _SpellCheckManager(spell_check_enabled=True)
+    win = NoteWindow(Note(html="<p>wrold wrold</p>"), manager=manager)
+
+    win._ignore_word("wrold")
+    win._ignore_word("wrold")
+
+    assert manager.settings.ignored_words == ["wrold"]
 
 
 def test_clicking_add_to_dictionary_calls_spellcheck_add_to_dictionary_with_the_word(qapp, monkeypatch):
