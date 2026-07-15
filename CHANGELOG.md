@@ -3,6 +3,24 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.10.0] - 2026-07-15
+
+### Added
+- Spell check: "Ignore" on a misspelled word is now permanent within
+  Take Note!, persisted across restarts instead of lasting only for
+  the current session. This never touches the system-wide dictionary
+  the way "Add to Dictionary" does.
+
+### Fixed
+- Auto-detected plain-text URLs with an obviously invalid host (e.g.
+  a comma instead of a dot) no longer get linkified. Typing a space
+  or pressing Enter right after a linkified URL no longer carries the
+  link's own formatting into whatever's typed next.
+- The Notes Manager's row selection could go stale — after deleting
+  selected notes or switching the tree filter (e.g. All Notes →
+  Trash), different notes than the ones actually selected could
+  appear highlighted.
+
 ## [1.9.0] - 2026-07-15
 
 ### Added
