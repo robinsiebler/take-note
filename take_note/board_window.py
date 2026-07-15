@@ -17,13 +17,39 @@ from PySide6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
-from .models import Board
-from .note_window import ICON_BUTTON_QSS, RADIUS, NoteWindow, get_menu_qss, header_shade
+from .models import FONT_SWATCHES, Board
+from .note_window import ICON_BUTTON_QSS, RADIUS, NoteWindow, get_color_popup_qss, get_menu_qss, header_shade
+from .widgets import build_color_swatch_grid
 from .x11_wm import set_skip_taskbar
 
 HEADER_HEIGHT = 24
+
+# Flat, arrow-less, rounded — matches this app's existing translucent-
+# white-overlay convention (ICON_BUTTON_QSS's rgba(255, 255, 255, N) hover
+# states) rather than the platform's native beveled scrollbar, which read
+# as one of the "ugly"/unpolished parts of this window. Fixed rgba
+# overlays rather than a board-color-derived shade: translucent white
+# holds reasonable contrast against every SWATCHES color without needing
+# its own per-color contrast pass, the same reasoning ICON_BUTTON_QSS
+# already relies on. Mocked up against two alternatives (a near-invisible
+# overlay with no track, and a solid chrome-colored handle) first — this
+# one (a faint dark track behind the handle, for a bit more at-a-glance
+# discoverability) is what the user picked.
+SCROLLBAR_QSS = """
+QScrollBar:vertical { background: rgba(0, 0, 0, 30); width: 12px; margin: 0px; border-radius: 6px; }
+QScrollBar::handle:vertical { background: rgba(255, 255, 255, 110); border-radius: 5px; min-height: 24px; margin: 1px; }
+QScrollBar::handle:vertical:hover { background: rgba(255, 255, 255, 160); }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal { background: rgba(0, 0, 0, 30); height: 12px; margin: 0px; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: rgba(255, 255, 255, 110); border-radius: 5px; min-width: 24px; margin: 1px; }
+QScrollBar::handle:horizontal:hover { background: rgba(255, 255, 255, 160); }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+"""
 
 # A small tileable pattern rather than a full-canvas-sized one — QBrush
 # tiles it natively (cheap, native Qt/GPU work), so this is only ever
@@ -179,6 +205,14 @@ class BoardCanvas(QWidget):
         rename_action = menu.addAction("Rename Notepad")
         rename_action.triggered.connect(board_window.rename)
 
+        color_action = menu.addAction("Change Notepad Color…")
+        # Anchored to the window itself, not this canvas — the canvas can
+        # grow well past the visible viewport (grow_to_fit()), so its own
+        # bottomLeft can sit far outside the window once scrolled, same
+        # reasoning NoteWindow's own "Change Note Color…" anchors to the
+        # whole note rather than whatever sub-widget was clicked.
+        color_action.triggered.connect(lambda: board_window.show_color_menu(board_window))
+
         menu.addSeparator()
         delete_action = menu.addAction("Delete Notepad")
         delete_action.triggered.connect(board_window.confirm_delete)
@@ -232,6 +266,7 @@ class NotepadWindow(QWidget):
 
         self.canvas = BoardCanvas(self)
         self.scroll = QScrollArea()
+        self.scroll.setObjectName("boardScroll")
         self.scroll.setAttribute(Qt.WA_StyledBackground, True)
         self.scroll.setFrameStyle(0)
         self.scroll.setWidget(self.canvas)
@@ -262,9 +297,50 @@ class NotepadWindow(QWidget):
         # Flat fallback for the sliver of QScrollArea viewport that can
         # show around the canvas before grow_to_fit() has run — the
         # canvas itself (normally filling that whole viewport) paints the
-        # real corkboard texture, not this flat color.
-        self.scroll.setStyleSheet(f"background-color: {self.board.color}; border: none;")
+        # real corkboard texture, not this flat color. Wrapped in its own
+        # #boardScroll selector rather than a bare declaration: a bare
+        # (selector-less) rule mixed with the class-selector QScrollBar
+        # rules below silently fails to parse at all — the exact same
+        # stylesheet-scoping trap already hit and fixed for the find bar's
+        # own buttons in note_window.py.
+        self.scroll.setStyleSheet(
+            f"#boardScroll {{ background-color: {self.board.color}; border: none; }}" + SCROLLBAR_QSS
+        )
         self.canvas.set_texture_color(self.board.color)
+
+    def set_color(self, color_hex: str):
+        self.board.color = color_hex
+        self._apply_color()
+        self.mark_changed()
+
+    def show_color_menu(self, anchor_widget: QWidget):
+        """Same popup mechanism NoteWindow.show_color_menu() builds for
+        notes (same get_color_popup_qss chrome, same build_color_swatch_grid
+        widget) but FONT_SWATCHES instead of the note SWATCHES — the note
+        palette's own bright pastels collided badly with a note sitting on
+        a same-colored board (confirmed live: a default-yellow note was
+        essentially invisible on a yellow board). FONT_SWATCHES was already
+        WCAG-contrast-checked against every note SWATCHES color (see its
+        own comment in models.py), just never tried as a *background fill*
+        before — mocked up against a muted/darkened note-SWATCHES-derived
+        palette first, user picked FONT_SWATCHES for reading more vibrant."""
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WA_TranslucentBackground, True)
+        menu.setStyleSheet(get_color_popup_qss())
+
+        grid_container = build_color_swatch_grid(
+            FONT_SWATCHES, self.board.color, lambda c: self._pick_color(c, menu)
+        )
+        grid_container.setStyleSheet("background: transparent;")
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(grid_container)
+        menu.addAction(action)
+
+        menu.exec(anchor_widget.mapToGlobal(anchor_widget.rect().bottomLeft()))
+
+    def _pick_color(self, color: str, menu: QMenu):
+        self.set_color(color)
+        menu.close()
 
     def rename(self):
         # The static QInputDialog.getText() convenience defaults to a
