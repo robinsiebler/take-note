@@ -31,6 +31,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
     QTextDocument,
@@ -65,7 +66,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import spellcheck
-from .list_markers import paint_list_markers
+from .list_markers import marker_gutter_rect, paint_list_markers
 from .models import FONT_SWATCHES, SWATCHES, TRANSPARENCY_LEVELS, Note
 from .reminders import format_reminder_for_display, local_datetime_to_utc_iso, utc_iso_to_local_datetime
 from .widgets import build_color_swatch_grid
@@ -652,6 +653,8 @@ class NoteBody(QTextEdit):
         # the Delete/Backspace key path does.
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and not self.toPlainText():
             self.note_window._clear_empty_list_formatting()
+        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.note_window._reset_new_checklist_item_format()
 
     def mouseMoveEvent(self, event):
         # A plain QTextEdit (unlike QTextBrowser) has no built-in hyperlink
@@ -680,6 +683,9 @@ class NoteBody(QTextEdit):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and not event.modifiers():
+            if self.note_window._toggle_checklist_marker_at(event.position().toPoint()):
+                return
         if event.button() == Qt.LeftButton and event.modifiers() & Qt.ControlModifier:
             anchor = self.anchorAt(event.position().toPoint())
             if anchor:
@@ -1030,6 +1036,7 @@ class NoteWindow(QWidget):
         self.resize(note.w, note.h)
         self.move(note.x, note.y)
         self.body.setHtml(note.html)
+        self._heal_checklist_styles_after_load()
         # Not `if not note.html:` — QTextEdit.toHtml() on a genuinely
         # empty document returns Qt's ~600-char boilerplate wrapper, not
         # an empty string. A note saved once while still empty (e.g.
@@ -1326,6 +1333,7 @@ class NoteWindow(QWidget):
         list_style_specs = [
             (None, "None"),
             (QTextListFormat.ListDisc, "• Bullets"),
+            (QTextListFormat.ListStyleUndefined, "Checklist"),
             (QTextListFormat.ListDecimal, "1, 2, 3"),
             (QTextListFormat.ListLowerAlpha, "a, b, c"),
             (QTextListFormat.ListUpperAlpha, "A, B, C"),
@@ -1754,7 +1762,10 @@ class NoteWindow(QWidget):
     def _set_list_style(self, style: QTextListFormat.Style | None):
         cursor = self.body.textCursor()
         if not cursor.hasSelection():
-            self._apply_list_style_to_block(cursor.block(), style)
+            if style is None:
+                self._remove_block_from_list(cursor.block())
+            else:
+                self._apply_real_style_to_blocks([cursor.block()], style)
             self.mark_changed()
             return
 
@@ -1770,39 +1781,127 @@ class NoteWindow(QWidget):
         if style is None:
             block = doc.findBlock(start)
             while block.isValid() and block.position() < end:
-                self._apply_list_style_to_block(block, style)
+                self._remove_block_from_list(block)
                 block = block.next()
             self.mark_changed()
             return
 
-        # Applying a real style: blocks that don't already belong to a
-        # list must become ONE shared list per contiguous run, not one
-        # independent single-item list per block. createList() called
-        # separately for each block (the old per-block loop, still used
-        # above for removal) created N separate lists that each started
-        # counting from 1 — reported live as every item in a numbered
-        # list showing "1." instead of incrementing 1, 2, 3... Blocks
-        # that already belong to a list just get that list's own style
-        # updated in place, same as before.
+        blocks = []
         block = doc.findBlock(start)
+        while block.isValid() and block.position() < end:
+            blocks.append(block)
+            block = block.next()
+        self._apply_real_style_to_blocks(blocks, style)
+        self.mark_changed()
+
+    def _apply_real_style_to_blocks(self, blocks, style: QTextListFormat.Style):
+        """Applies `style` (never None — see _remove_block_from_list for
+        that case) to every block in `blocks`, a contiguous run from a
+        single selection (or one block, from a bare caret).
+
+        A block already sharing a QTextList with every one of that list's
+        members present in `blocks` is simply restyled in place — cheap
+        and safe, the same thing a select-the-whole-list conversion
+        already did correctly before this fix. But a block sharing a list
+        with members NOT in `blocks` is detached from that list first,
+        leaving the untouched members correctly grouped/renumbered on
+        their own — reported live: selecting and converting a single
+        checklist item out of a multi-item shared list silently converted
+        every sibling too, since QTextList.setFormat() (the old,
+        unconditional approach) always applies to the *entire* list
+        object, regardless of which one block's cursor triggered the
+        change. Once detached (or if a block never had a list at all),
+        it's folded into the same contiguous-run shared-list grouping
+        _create_shared_list() already uses for brand-new lists, so
+        several newly-converted adjacent blocks still end up correctly
+        numbered together instead of each becoming its own independent
+        single-item list.
+
+        Membership below is tracked via block.position(), not Python's
+        id(): confirmed directly that PySide6 hands back a freshly
+        wrapped QTextBlock object on every fetch (doc.findBlock(),
+        current_list.item(), iterating with .next() at a different point
+        in time), so id() differs between two wrappers pointing at the
+        exact same underlying block even though == correctly reports them
+        equal. A first version of this method built its selected-block
+        set from id() and consistently failed to recognize ANY block as
+        selected — not just the partial-selection case this method
+        exists to fix, but the plain "select the whole list" case too."""
+        selected_positions = {b.position() for b in blocks}
+        handled_list_keys = set()
+        for block in blocks:
+            current_list = block.textList()
+            if current_list is None:
+                continue
+            list_key = current_list.item(0).position()
+            if list_key in handled_list_keys:
+                continue
+            handled_list_keys.add(list_key)
+            members = [current_list.item(i) for i in range(current_list.count())]
+            if all(member.position() in selected_positions for member in members):
+                fmt = current_list.format()
+                fmt.setStyle(style)
+                current_list.setFormat(fmt)
+                for member in members:
+                    self._sync_checklist_marker(member, style)
+            else:
+                for member in members:
+                    if member.position() in selected_positions:
+                        current_list.remove(member)
+
         run_start = None
         run_end = None
-        while block.isValid() and block.position() < end:
+        for block in blocks:
             if block.textList() is not None:
                 if run_start is not None:
                     self._create_shared_list(run_start, run_end, style)
                     run_start = None
-                fmt = block.textList().format()
-                fmt.setStyle(style)
-                block.textList().setFormat(fmt)
-            else:
-                if run_start is None:
-                    run_start = block
-                run_end = block
-            block = block.next()
+                continue
+            if run_start is None:
+                run_start = block
+            run_end = block
         if run_start is not None:
             self._create_shared_list(run_start, run_end, style)
-        self.mark_changed()
+
+    def _heal_checklist_styles_after_load(self):
+        """QTextListFormat.ListStyleUndefined (this app's sentinel for
+        Checklist — see list_style_specs) does not survive a
+        toHtml()/setHtml() round-trip as itself: confirmed directly that
+        the exported <ul> for it carries no list-style-type CSS at all, so
+        Qt's own HTML parser silently defaults it back to ListDisc on
+        reload. Reported live: a saved checklist reopened as a plain
+        bulleted list — its *items* still showed the right checked state
+        (blockFormat().marker() persists independently of the list's own
+        style()) but every marker painted as a bullet dot, since
+        paint_list_markers()/_current_list_style()/etc. all key off
+        style() == ListStyleUndefined, not marker() alone.
+
+        Re-normalizes any list containing a real Checked/Unchecked marker
+        back to ListStyleUndefined right after load, once, so every other
+        checklist-related check in this class can keep trusting
+        style() == ListStyleUndefined as its single source of truth
+        instead of each needing its own marker-aware fallback. One
+        setFormat() per distinct QTextList (not per block) — a shared
+        list's style applies to every block in it at once, and a list is
+        never a mix of checklist and non-checklist blocks (the only ways
+        blocks join a shared list — _create_shared_list,
+        _find_adjacent_list rejoining — only ever merge blocks already
+        being given the same target style)."""
+        healed_lists = set()
+        block = self.body.document().begin()
+        while block.isValid():
+            text_list = block.textList()
+            if (
+                text_list is not None
+                and id(text_list) not in healed_lists
+                and block.blockFormat().marker() != QTextBlockFormat.MarkerType.NoMarker
+            ):
+                healed_lists.add(id(text_list))
+                if text_list.format().style() != QTextListFormat.ListStyleUndefined:
+                    fmt = text_list.format()
+                    fmt.setStyle(QTextListFormat.ListStyleUndefined)
+                    text_list.setFormat(fmt)
+            block = block.next()
 
     def _create_shared_list(self, start_block, end_block, style: QTextListFormat.Style):
         run_cursor = QTextCursor(start_block)
@@ -1810,35 +1909,63 @@ class NoteWindow(QWidget):
         end_pos = min(end_pos, self.body.document().characterCount() - 1)
         run_cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
         run_cursor.createList(QTextListFormat.Style(style))
+        block = start_block
+        while block.isValid():
+            self._sync_checklist_marker(block, style)
+            if block == end_block:
+                break
+            block = block.next()
 
-    def _apply_list_style_to_block(self, block, style: QTextListFormat.Style | None):
+    def _sync_checklist_marker(self, block, style: QTextListFormat.Style | None):
+        """Qt's own MarkerType field (Checked/Unchecked/NoMarker) is what
+        makes a checklist item's checked state survive a save/reload — see
+        list_markers.py's docstring — but createList()/setStyle() never
+        touch it themselves, so a block switching into Checklist needs a
+        real Unchecked default seeded in, and a block switching *away*
+        from Checklist needs any stale Checked/Unchecked cleared back out
+        (harmless for rendering either way, since paint_list_markers only
+        ever looks at marker() when the block's own style is still
+        ListStyleUndefined, but leaving it set would misrepresent the
+        block's real state if it ever became a checklist item again).
+
+        Switching a *checked* item away also clears its strikethrough/grey
+        text — reported live as a real bug (converting a checked item to
+        e.g. Numbers left it permanently grey/strikethrough even though it
+        was no longer a checklist item at all)."""
+        cursor = QTextCursor(block)
+        block_fmt = cursor.blockFormat()
+        if style == QTextListFormat.ListStyleUndefined:
+            if block_fmt.marker() == QTextBlockFormat.MarkerType.NoMarker:
+                block_fmt.setMarker(QTextBlockFormat.MarkerType.Unchecked)
+                cursor.setBlockFormat(block_fmt)
+        elif block_fmt.marker() != QTextBlockFormat.MarkerType.NoMarker:
+            was_checked = block_fmt.marker() == QTextBlockFormat.MarkerType.Checked
+            block_fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            cursor.setBlockFormat(block_fmt)
+            if was_checked:
+                self._apply_checklist_text_format(block, checked=False)
+
+    def _remove_block_from_list(self, block):
         current_list = block.textList()
-        if style is None:
-            if current_list is not None:
-                # QTextList.remove() drops the block's list membership
-                # but leaves its own blockFormat().indent() at whatever
-                # the list's nesting indent used to be — Qt preserves the
-                # visual position by transferring that weight onto the
-                # block itself instead of snapping back to the margin.
-                # Reported live via a screenshot: selecting a multi-level
-                # nested list and choosing "None" removed every bullet,
-                # but each line stayed staggered at its old nesting
-                # depth as plain paragraph indent, looking like the
-                # reset silently half-failed. Nesting depth belongs to
-                # the list alone once one exists (see _list_indent_step);
-                # once the list is gone there's nothing left to justify
-                # a nonzero block indent either.
-                current_list.remove(block)
-                cursor = QTextCursor(block)
-                block_fmt = cursor.blockFormat()
-                block_fmt.setIndent(0)
-                cursor.mergeBlockFormat(block_fmt)
-        elif current_list is not None:
-            fmt = current_list.format()
-            fmt.setStyle(style)
-            current_list.setFormat(fmt)
-        else:
-            QTextCursor(block).createList(QTextListFormat.Style(style))
+        if current_list is None:
+            return
+        # QTextList.remove() drops the block's list membership but leaves
+        # its own blockFormat().indent() at whatever the list's nesting
+        # indent used to be — Qt preserves the visual position by
+        # transferring that weight onto the block itself instead of
+        # snapping back to the margin. Reported live via a screenshot:
+        # selecting a multi-level nested list and choosing "None" removed
+        # every bullet, but each line stayed staggered at its old nesting
+        # depth as plain paragraph indent, looking like the reset silently
+        # half-failed. Nesting depth belongs to the list alone once one
+        # exists (see _list_indent_step); once the list is gone there's
+        # nothing left to justify a nonzero block indent either.
+        current_list.remove(block)
+        cursor = QTextCursor(block)
+        block_fmt = cursor.blockFormat()
+        block_fmt.setIndent(0)
+        cursor.mergeBlockFormat(block_fmt)
+        self._sync_checklist_marker(block, None)
 
     def _current_list_style(self) -> QTextListFormat.Style | None:
         """The list style at the cursor, or None outside any list. Used to
@@ -1857,9 +1984,118 @@ class NoteWindow(QWidget):
         if current_list is not None:
             current_list.remove(cursor.block())
         block_fmt = cursor.blockFormat()
+        changed = False
         if block_fmt.indent() != 0:
             block_fmt.setIndent(0)
+            changed = True
+        if block_fmt.marker() != QTextBlockFormat.MarkerType.NoMarker:
+            block_fmt.setMarker(QTextBlockFormat.MarkerType.NoMarker)
+            changed = True
+        if changed:
             cursor.mergeBlockFormat(block_fmt)
+
+    def _toggle_checklist_marker_at(self, pos) -> bool:
+        """`pos` is in NoteBody's own viewport coordinates (same space
+        mouseReleaseEvent's event.position() reports in). Returns True
+        (having toggled) when it lands inside a checklist item's checkbox
+        gutter — the exact rect list_markers.py paints into — so the
+        caller can fall through to normal text-click handling otherwise.
+        A locked note blocks this the same as every other edit: body.
+        setReadOnly() only stops Qt's own keystroke-driven editing, not a
+        direct QTextCursor mutation like this one, so without this check
+        a locked note's checklist could still be toggled by clicking it."""
+        if self.note.locked:
+            return False
+        document = self.body.document()
+        block = document.begin()
+        while block.isValid():
+            text_list = block.textList()
+            if text_list is not None and text_list.format().style() == QTextListFormat.ListStyleUndefined:
+                if marker_gutter_rect(self.body, block).contains(pos):
+                    self._toggle_checklist_item(block)
+                    return True
+            block = block.next()
+        return False
+
+    def _apply_checklist_text_format(self, block, checked: bool) -> QTextCharFormat:
+        """Strikethrough + muted grey for a checked item, this app's
+        configured default otherwise — the one place that applies or
+        clears that look, reused by the checkbox toggle itself, by
+        _sync_checklist_marker() when a checked item switches to a
+        *different* list style entirely (reported live as a real bug:
+        leaving it permanently grey/strikethrough there isn't the same
+        kind of unavoidable tradeoff remove_hyperlink() accepts — unlike
+        link styling, this formatting was never a deliberate user choice,
+        it's entirely auto-applied by this app, so it can just as easily
+        be auto-cleared), and by _reset_new_checklist_item_format() for a
+        fresh empty item's still-invisible block format. "#888888" matches
+        the muted-grey convention already used elsewhere in this app
+        (Settings' spell-check-unavailable hint) rather than inventing a
+        new grey.
+
+        mergeCharFormat colors the actual visible text; mergeBlockCharFormat
+        is the separate format list_markers.py's foreground read draws the
+        checkbox itself with (see _merge_block_format_over_selection's own
+        docstring for why list markers need this second call). Deliberately
+        NOT block.length() (which would include the trailing block
+        separator, matching _merge_block_format_over_selection's own
+        range): confirmed live that extending into the separator bleeds
+        this block's strikeout/color onto the *next* block once
+        toHtml()/setHtml() round-trips it — stopping at -1 avoids that,
+        and markContentsDirty() below is what actually guards against the
+        zero-size-layout corruption the separator-inclusion was for."""
+        fmt = QTextCharFormat()
+        fmt.setFontStrikeOut(checked)
+        fmt.setForeground(QColor("#888888") if checked else QColor(self.manager.settings.default_font_color))
+        block_end = min(block.position() + block.length() - 1, self.body.document().characterCount() - 1)
+        text_cursor = QTextCursor(block)
+        text_cursor.setPosition(block_end, QTextCursor.KeepAnchor)
+        text_cursor.mergeCharFormat(fmt)
+        text_cursor.mergeBlockCharFormat(fmt)
+        self.body.document().markContentsDirty(block.position(), block.length())
+        return fmt
+
+    def _toggle_checklist_item(self, block):
+        cursor = QTextCursor(block)
+        block_fmt = cursor.blockFormat()
+        checked = block_fmt.marker() == QTextBlockFormat.MarkerType.Checked
+        new_checked = not checked
+        block_fmt.setMarker(QTextBlockFormat.MarkerType.Checked if new_checked else QTextBlockFormat.MarkerType.Unchecked)
+        cursor.setBlockFormat(block_fmt)
+        self._apply_checklist_text_format(block, new_checked)
+        self.body.viewport().update()
+        self.mark_changed()
+
+    def _reset_new_checklist_item_format(self):
+        """Pressing Enter inside a checked item's text carries its
+        strikethrough+grey formatting onto the brand-new item Qt's own
+        list continuation just created, confirmed live — Qt already
+        resets the new block's own marker() to Unchecked on its own, but
+        that's a completely separate mechanism from char-format
+        inheritance, which knows nothing about Checked/Unchecked. Only
+        touches a block that's both empty and a fresh checklist item, so
+        splitting existing checked text mid-line (the new block then
+        keeps real trailing content, not empty) is left alone.
+
+        _apply_checklist_text_format() alone fixes the *marker's* paint
+        color (it reads the block's own char format via
+        _leading_char_format(), not the live editing cursor's ambient
+        state) but not what the *next keystroke* produces — confirmed
+        live: without the extra mergeCurrentCharFormat() call below, a
+        brand-new item's checkbox rendered correctly from the start, but
+        the first character actually typed still came out in the
+        checked-item grey until then. mergeCurrentCharFormat() only
+        affects the widget's own live cursor, a different object than the
+        throwaway QTextCursor(block) _apply_checklist_text_format() uses
+        internally, so both calls are needed together."""
+        block = self.body.textCursor().block()
+        if block.text():
+            return
+        text_list = block.textList()
+        if text_list is None or text_list.format().style() != QTextListFormat.ListStyleUndefined:
+            return
+        fmt = self._apply_checklist_text_format(block, checked=False)
+        self.body.mergeCurrentCharFormat(fmt)
 
     @staticmethod
     def _find_adjacent_list(block, target_indent: int):

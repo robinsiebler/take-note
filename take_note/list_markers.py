@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QFontMetricsF, QPainter, QPalette, QTextCursor, QTextListFormat
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QFontMetricsF, QPainter, QPalette, QPen, QTextBlockFormat, QTextCursor, QTextListFormat
 
 _ROMAN_VALUES = [
     (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
@@ -52,6 +52,45 @@ def marker_text(style: QTextListFormat.Style, item_number_1based: int) -> str | 
     if style == QTextListFormat.ListUpperRoman:
         return f"{to_roman(item_number_1based)}."
     return None
+
+
+def _paint_checklist_marker(painter: QPainter, gutter_rect: QRectF, font, block, foreground, background) -> None:
+    """Hand-drawn checkbox for a Checklist-style block (style ==
+    ListStyleUndefined, the same sentinel Qt's own Markdown task-list
+    import uses) — checked state lives on the block's own
+    QTextBlockFormat.marker(), toggled by NoteWindow._toggle_checklist_item
+    on a gutter click. `background` fills the tick itself so it always
+    reads against the filled box regardless of note color or selection
+    highlight, mirroring how `foreground` already carries selection state
+    for every other marker style drawn below."""
+    checked = block.blockFormat().marker() == QTextBlockFormat.MarkerType.Checked
+    size = QFontMetricsF(font).xHeight() * 1.3
+    cy = gutter_rect.center().y()
+    cx = gutter_rect.right() - _MARKER_TEXT_GAP - size
+    box = QRectF(cx, cy - size / 2, size, size)
+    radius = size * 0.22
+
+    pen = QPen(foreground)
+    pen.setWidthF(max(1.0, size * 0.12))
+    painter.setPen(pen)
+    painter.setBrush(foreground if checked else Qt.NoBrush)
+    painter.drawRoundedRect(box, radius, radius)
+    painter.setBrush(Qt.NoBrush)
+
+    if checked:
+        tick_pen = QPen(background)
+        tick_pen.setWidthF(max(1.0, size * 0.16))
+        tick_pen.setCapStyle(Qt.RoundCap)
+        tick_pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(tick_pen)
+        painter.drawLine(
+            QPointF(box.left() + size * 0.22, box.top() + size * 0.55),
+            QPointF(box.left() + size * 0.42, box.bottom() - size * 0.18),
+        )
+        painter.drawLine(
+            QPointF(box.left() + size * 0.42, box.bottom() - size * 0.18),
+            QPointF(box.right() - size * 0.18, box.top() + size * 0.22),
+        )
 
 
 def marker_gutter_rect(body, block) -> QRectF:
@@ -135,5 +174,7 @@ def paint_list_markers(body, painter: QPainter) -> None:
             else:
                 painter.drawEllipse(marker_rect)
             painter.setBrush(Qt.NoBrush)
+        elif style == QTextListFormat.ListStyleUndefined:
+            _paint_checklist_marker(painter, gutter_rect, font, block, foreground, background)
 
         block = block.next()

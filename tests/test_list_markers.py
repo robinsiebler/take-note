@@ -46,6 +46,10 @@ def test_marker_text_disc_has_no_text_marker():
     assert marker_text(QTextListFormat.ListSquare, 1) is None
 
 
+def test_marker_text_checklist_has_no_text_marker():
+    assert marker_text(QTextListFormat.ListStyleUndefined, 1) is None
+
+
 def test_marker_text_numbered_styles_end_with_a_period():
     """Confirmed against Qt's own native rendering of each style — every
     numbered marker ends with a literal period, no other punctuation."""
@@ -82,6 +86,21 @@ def test_painting_list_markers_never_triggers_a_document_change(qapp):
     win = make_note_window("First\nSecond\nThird\nFourth")
     select_all(win)
     win._set_list_style(QTextListFormat.ListDisc)
+
+    changed = {"count": 0}
+    win.body.textChanged.connect(lambda: changed.__setitem__("count", changed["count"] + 1))
+
+    for _ in range(5):
+        win.body.repaint()
+
+    assert changed["count"] == 0
+
+
+def test_painting_checklist_markers_never_triggers_a_document_change(qapp):
+    win = make_note_window("Buy milk\nWalk the dog")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win._toggle_checklist_item(win.body.document().findBlockByNumber(0))
 
     changed = {"count": 0}
     win.body.textChanged.connect(lambda: changed.__setitem__("count", changed["count"] + 1))

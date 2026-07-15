@@ -12,6 +12,7 @@ from PySide6.QtGui import (
     QImage,
     QKeyEvent,
     QMouseEvent,
+    QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
     QTextListFormat,
@@ -147,6 +148,338 @@ def test_set_list_style_applies_across_multiblock_selection(qapp):
     for i in range(3):
         block = doc.findBlockByNumber(i)
         assert block.textList().format().style() == QTextListFormat.ListUpperRoman
+
+
+def _checklist_gutter_center(win, index):
+    from take_note.list_markers import marker_gutter_rect
+
+    block = win.body.document().findBlockByNumber(index)
+    return marker_gutter_rect(win.body, block).center()
+
+
+def test_set_list_style_checklist_defaults_new_items_unchecked(qapp):
+    win = make_note_window("Buy milk\nWalk the dog")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+
+    doc = win.body.document()
+    for i in range(2):
+        block = doc.findBlockByNumber(i)
+        assert block.textList().format().style() == QTextListFormat.ListStyleUndefined
+        assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.Unchecked
+
+
+def test_set_list_style_none_clears_checklist_marker(qapp):
+    win = make_note_window("Buy milk")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win._toggle_checklist_item(win.body.document().findBlockByNumber(0))
+
+    select_all(win)
+    win._set_list_style(None)
+
+    block = win.body.document().findBlockByNumber(0)
+    assert block.textList() is None
+    assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.NoMarker
+
+
+def test_converting_a_single_checklist_item_does_not_affect_its_siblings(qapp):
+    """The serious one, reported live: selecting and converting just ONE
+    item out of a multi-item shared checklist silently converted every
+    sibling too — since several checklist items sharing one QTextList
+    (created together, e.g. via one multi-line selection) is exactly how
+    numbering/grouping stays in sync, and the old code's
+    current_list.setFormat() applied to that *entire* list object
+    regardless of which single block's cursor triggered the change.
+    "Convert the whole list" already worked correctly before this fix
+    (still covered by test_set_list_style_applies_across_multiblock_
+    selection) — this is specifically the partial-selection case."""
+    win = make_note_window("carrots\nbacon\ncheese")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    doc = win.body.document()
+    win._toggle_checklist_item(doc.findBlockByNumber(1))  # check "bacon"
+
+    # Select only "bacon" (no real text selection needed — a bare caret in
+    # that block already reaches the no-selection/_apply_real_style_to_blocks
+    # path with just that one block) and convert just it.
+    cursor = win.body.textCursor()
+    cursor.setPosition(doc.findBlockByNumber(1).position())
+    win.body.setTextCursor(cursor)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    carrots = doc.findBlockByNumber(0)
+    bacon = doc.findBlockByNumber(1)
+    cheese = doc.findBlockByNumber(2)
+    assert carrots.textList().format().style() == QTextListFormat.ListStyleUndefined
+    assert cheese.textList().format().style() == QTextListFormat.ListStyleUndefined
+    assert bacon.textList().format().style() == QTextListFormat.ListDecimal
+    # carrots/cheese must still be one shared list together (just without
+    # bacon), not two independent single-item lists.
+    # == (Qt's own equality), not is — id() isn't stable across separate
+    # QTextList wrapper fetches, same trap the app-code fix above avoids.
+    assert carrots.textList() == cheese.textList()
+    assert carrots.textList() != bacon.textList()
+    # bacon left Checklist entirely, so its checked-item marker/formatting
+    # clears too (same fix as test_switching_a_checked_item_to_another_
+    # style_also_clears_its_text_formatting).
+    assert bacon.blockFormat().marker() == QTextBlockFormat.MarkerType.NoMarker
+
+
+def test_switching_checklist_item_to_another_style_clears_its_marker(qapp):
+    """A block's marker() is only meaningful while its own list style is
+    still Checklist — switching to e.g. Bullets should clear any stale
+    Checked/Unchecked left over, not silently keep it around."""
+    win = make_note_window("Buy milk")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win._toggle_checklist_item(win.body.document().findBlockByNumber(0))
+
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDisc)
+
+    block = win.body.document().findBlockByNumber(0)
+    assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.NoMarker
+
+
+def test_switching_a_checked_item_to_another_style_also_clears_its_text_formatting(qapp):
+    """Regression, reported live: converting a *checked* item to Numbers
+    correctly dropped the checkbox but left the text permanently grey and
+    strikethrough — this formatting was never a deliberate user choice
+    (unlike, say, remove_hyperlink()'s unavoidable tradeoff), it's
+    entirely auto-applied by this app's own checkbox toggle, so switching
+    away from Checklist should auto-clear it too."""
+    win = make_note_window("Wash dishes")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    block = win.body.document().findBlockByNumber(0)
+    win._toggle_checklist_item(block)  # check it
+
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    block = win.body.document().findBlockByNumber(0)
+    cursor = QTextCursor(block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    fmt = cursor.charFormat()
+    assert fmt.fontStrikeOut() is False
+    assert fmt.foreground().color().name() != "#888888"
+
+
+def test_switching_an_unchecked_item_to_another_style_does_not_touch_its_formatting(qapp):
+    """An unchecked item was never given the grey/strikethrough treatment
+    in the first place, so switching its style shouldn't merge any new
+    formatting over it either — confirms the fix above is conditional on
+    was_checked, not an unconditional reset that could clobber a user's
+    own deliberate text color on an unchecked item."""
+    win = make_note_window("Wash dishes")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    block = win.body.document().findBlockByNumber(0)
+    cursor = QTextCursor(block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    custom = QTextCharFormat()
+    custom.setForeground(QColor("#ff0000"))
+    cursor.mergeCharFormat(custom)
+
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+
+    block = win.body.document().findBlockByNumber(0)
+    cursor = QTextCursor(block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().foreground().color().name() == "#ff0000"
+
+
+def test_toggle_checklist_marker_at_gutter_click_checks_item(qapp):
+    win = make_note_window("Buy milk\nWalk the dog")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+
+    hit = win._toggle_checklist_marker_at(_checklist_gutter_center(win, 0))
+
+    block = win.body.document().findBlockByNumber(0)
+    assert hit is True
+    assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.Checked
+
+
+def test_toggle_checklist_marker_at_outside_gutter_does_nothing(qapp):
+    win = make_note_window("Buy milk")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+
+    hit = win._toggle_checklist_marker_at(QPointF(-1000, -1000))
+
+    block = win.body.document().findBlockByNumber(0)
+    assert hit is False
+    assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.Unchecked
+
+
+def test_toggle_checklist_item_applies_and_clears_strikeout(qapp):
+    win = make_note_window("Buy milk")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    block = win.body.document().findBlockByNumber(0)
+
+    win._toggle_checklist_item(block)
+    cursor = QTextCursor(block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().fontStrikeOut() is True
+
+    win._toggle_checklist_item(block)
+    cursor = QTextCursor(block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().fontStrikeOut() is False
+
+
+def test_toggle_checklist_marker_survives_html_round_trip(qapp):
+    """Also a regression guard: the checked item's strikeout/color merge
+    originally extended through the block's trailing separator character
+    (matching _merge_block_format_over_selection's own range, added there
+    for an unrelated layout-corruption fix) — confirmed live this leaked
+    the checked formatting onto the *next* block once round-tripped
+    through toHtml()/setHtml(), striking through "Finish report" even
+    though only "Walk the dog" was ever checked."""
+    win = make_note_window("Buy milk\nWalk the dog\nFinish report")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    doc = win.body.document()
+    win._toggle_checklist_item(doc.findBlockByNumber(1))
+
+    html = win.body.toHtml()
+    reloaded = make_note_window("")
+    reloaded.body.setHtml(html)
+
+    doc2 = reloaded.body.document()
+    markers = [doc2.findBlockByNumber(i).blockFormat().marker() for i in range(3)]
+    assert markers == [
+        QTextBlockFormat.MarkerType.Unchecked,
+        QTextBlockFormat.MarkerType.Checked,
+        QTextBlockFormat.MarkerType.Unchecked,
+    ]
+
+    def strikeout_at(i):
+        block = doc2.findBlockByNumber(i)
+        cursor = QTextCursor(block)
+        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        return cursor.charFormat().fontStrikeOut()
+
+    assert strikeout_at(0) is False
+    assert strikeout_at(1) is True
+    assert strikeout_at(2) is False
+
+
+def test_checklist_style_survives_a_full_note_reload(qapp):
+    """The serious one, reported live: a saved checklist reopened as a
+    plain bulleted list. Root cause confirmed directly — Qt's own
+    toHtml() export of a ListStyleUndefined list carries no
+    list-style-type CSS at all, so its own HTML parser silently defaults
+    a bare <ul> back to ListDisc on reload. marker() survives
+    independently (already covered by the round-trip test above), which
+    is exactly why the *checked* item kept its grey/strikethrough even
+    though the whole list rendered as bullets — the underlying data
+    looked checked, but paint_list_markers()/_current_list_style() both
+    key off style() == ListStyleUndefined, not marker() alone. Goes
+    through the real NoteWindow(Note(html=...)) constructor, not a bare
+    setHtml() call, since the fix lives in __init__'s post-load heal
+    pass."""
+    win = make_note_window("Buy milk\nWalk the dog\nFinish report")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win._toggle_checklist_item(win.body.document().findBlockByNumber(1))
+    html = win.body.toHtml()
+
+    reloaded = NoteWindow(Note(html=html), manager=FakeManager())
+
+    doc = reloaded.body.document()
+    for i in range(3):
+        block = doc.findBlockByNumber(i)
+        assert block.textList().format().style() == QTextListFormat.ListStyleUndefined
+    assert doc.findBlockByNumber(1).blockFormat().marker() == QTextBlockFormat.MarkerType.Checked
+
+
+def test_checklist_style_reload_does_not_affect_ordinary_lists(qapp):
+    """The healing pass after load only touches lists that actually have
+    a real marker on them — an ordinary Bullets/Numbers list (never a
+    checklist at all) must come back exactly as saved, not get pulled
+    into Checklist just because it's a list."""
+    win = make_note_window("carrots\ncelery")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListDecimal)
+    html = win.body.toHtml()
+
+    reloaded = NoteWindow(Note(html=html), manager=FakeManager())
+
+    doc = reloaded.body.document()
+    for i in range(2):
+        assert doc.findBlockByNumber(i).textList().format().style() == QTextListFormat.ListDecimal
+
+
+def test_toggle_checklist_marker_blocked_when_locked(qapp):
+    win = make_note_window("Buy milk")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win.set_locked(True)
+
+    hit = win._toggle_checklist_marker_at(_checklist_gutter_center(win, 0))
+
+    block = win.body.document().findBlockByNumber(0)
+    assert hit is False
+    assert block.blockFormat().marker() == QTextBlockFormat.MarkerType.Unchecked
+
+
+def test_enter_after_checked_item_does_not_inherit_strikeout(qapp):
+    """Regression: Qt's own list continuation already resets a freshly
+    created item's marker() to Unchecked on Enter, but that's a completely
+    separate mechanism from char-format inheritance — confirmed live the
+    new item's *text* kept the previous (checked) item's strikethrough and
+    grey color even though its checkbox correctly rendered empty."""
+    win = make_note_window("Finish report")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    block = win.body.document().findBlockByNumber(0)
+    win._toggle_checklist_item(block)
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+    win.body.insertPlainText("Buy stamps")
+
+    new_block = win.body.textCursor().block()
+    assert new_block.blockFormat().marker() == QTextBlockFormat.MarkerType.Unchecked
+    cursor = QTextCursor(new_block)
+    cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+    assert cursor.charFormat().fontStrikeOut() is False
+
+
+def test_enter_after_checked_item_fixes_the_new_checkbox_color_immediately(qapp):
+    """Regression, reported live: the fix above (mergeCurrentCharFormat)
+    only corrects what the *next keystroke* produces — it doesn't touch
+    the block's own char format, which is what list_markers.py's
+    _leading_char_format() actually reads to color the checkbox itself.
+    Before this fix, a brand-new item's checkbox rendered pale/grey right
+    after pressing Enter, only turning the normal color once text was
+    actually typed into it. Probes the block's own format directly
+    (a fresh QTextCursor at block.position(), same read
+    _leading_char_format() does) rather than the live editing cursor,
+    since that's specifically the read that stayed wrong before."""
+    win = make_note_window("Finish report")
+    select_all(win)
+    win._set_list_style(QTextListFormat.ListStyleUndefined)
+    win._toggle_checklist_item(win.body.document().findBlockByNumber(0))
+
+    cursor = win.body.textCursor()
+    cursor.movePosition(QTextCursor.End)
+    win.body.setTextCursor(cursor)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier)
+    qapp.sendEvent(win.body, event)
+
+    new_block = win.body.textCursor().block()
+    probe = QTextCursor(win.body.document())
+    probe.setPosition(new_block.position())
+    assert probe.charFormat().foreground().color().name() != "#888888"
 
 
 def test_increase_indent_creates_nested_list(qapp):
