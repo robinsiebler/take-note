@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -18,9 +19,14 @@ def _desktop_file_path() -> Path:
 
 
 def _executable_path() -> Path:
-    """Path to the installed console-script entry point, which setuptools/
-    hatchling install alongside the running Python interpreter (e.g. next
-    to .venv/bin/python)."""
+    """Path to the installed console-script entry point. Prefer resolving
+    it via PATH (shutil.which) since a `pip install --user` (the documented
+    install method) puts it in ~/.local/bin, not next to sys.executable's
+    system Python — only an editable/venv install puts it alongside the
+    interpreter, e.g. .venv/bin/take-note."""
+    found = shutil.which(APP_NAME)
+    if found:
+        return Path(found)
     return Path(sys.executable).parent / APP_NAME
 
 
