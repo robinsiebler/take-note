@@ -101,6 +101,23 @@ HYPERLINK_COLOR = "#1a237e"
 # the match so "See https://example.com." doesn't linkify the period too.
 _URL_PATTERN = re.compile(r"https?://\S+")
 _URL_TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
+# A basic sanity check on the host portion only — not full RFC 3986
+# validation, just enough to reject an obvious typo. Reported live:
+# "http://www,google.com" (a stray comma where a dot belongs) still
+# linkified despite being clearly broken, since the old check only ever
+# looked for the http(s):// scheme. Domain labels are letters/digits/
+# hyphens, joined by at least one dot — this also means a bare single-
+# label host like "http://localhost" won't linkify either, an accepted
+# tradeoff for this simple a check.
+_HOST_PATTERN = re.compile(r"^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+
+
+def _has_valid_host(url: str) -> bool:
+    host = url.split("://", 1)[1]
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    host = host.split("@")[-1]  # drop "user:pass@" userinfo, if present
+    host = host.split(":", 1)[0]  # drop ":port", if present
+    return bool(_HOST_PATTERN.match(host))
 
 
 def _detect_url_span(text: str, offset: int) -> tuple[int, int, str] | None:
@@ -112,7 +129,7 @@ def _detect_url_span(text: str, offset: int) -> tuple[int, int, str] | None:
         start, end = match.span()
         url = match.group().rstrip(_URL_TRAILING_PUNCTUATION)
         end = start + len(url)
-        if start <= offset < end:
+        if start <= offset < end and _has_valid_host(url):
             return start, end, url
     return None
 
@@ -1228,10 +1245,38 @@ class NoteWindow(QWidget):
         note silently resetting it to the app's global default color);
         only fall back to the configured default format when there's
         truly nothing before the cursor to inherit from — a brand-new
-        empty note, or genuinely at position 0."""
+        empty note, or genuinely at position 0.
+
+        A third, unrelated case fixed here too: the ambient format
+        carrying a hyperlink's own anchor/color/underline forward past
+        the link's real end. Reported live: linkifying a URL, moving the
+        cursor to the end of the line (or just past the link) and typing
+        — a space, pressing Enter, anything — produced text that was
+        itself part of the link (same underline/color, sharing its
+        href). A collapsed cursor's format comes from the character
+        immediately before it, which right after a link's last character
+        is still that link's own anchor format; only reset it when the
+        cursor is genuinely AT that boundary — nothing anchored right
+        after it either — since a cursor still truly inside a link's own
+        text (anchored on both sides) legitimately shouldn't have its
+        formatting touched."""
         cursor = self.body.textCursor()
         if cursor.hasSelection():
             return
+        if self.body.currentCharFormat().isAnchor():
+            probe = QTextCursor(self.body.document())
+            probe.setPosition(cursor.position())
+            probe.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            still_inside_link = probe.hasSelection() and probe.charFormat().isAnchor()
+            if not still_inside_link:
+                fmt = QTextCharFormat()
+                fmt.setAnchor(False)
+                fmt.setAnchorHref("")
+                fmt.setForeground(QColor(self.manager.settings.default_font_color))
+                fmt.setFontUnderline(False)
+                self.body.mergeCurrentCharFormat(fmt)
+                return
+
         if self.body.currentCharFormat().foreground().style() != Qt.NoBrush:
             return
         if cursor.position() > 0:
