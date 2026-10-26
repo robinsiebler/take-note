@@ -9,7 +9,12 @@ description = "A sticky notes app for Linux (Python + PySide6/Qt6) — rich text
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "PySide6",
+    # PySide6 6.12.0 over-decrefs Py_None on every None-returning call
+    # (setBrush, setPen, ...); harmless on 3.12+ where None is immortal,
+    # but on 3.10/3.11 it reaches zero within seconds and aborts with
+    # "none_dealloc: deallocating None".
+    "PySide6!=6.12.0; python_version < '3.12'",
+    "PySide6; python_version >= '3.12'",
     "python-xlib",
 ]
 
