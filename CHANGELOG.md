@@ -3,6 +3,15 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.10.3] - 2026-10-26
+
+### Fixed
+- On Python 3.10 and 3.11, Take Note! could abort within seconds of
+  starting when PySide6 6.12.0 was installed: that release drops a
+  reference to Python's `None` on every Qt call that returns nothing.
+  PySide6 6.12.0 is now excluded on Python below 3.12; 3.12 and later
+  are unaffected and still get it.
+
 ## [1.10.2] - 2026-10-26
 
 ### Fixed
