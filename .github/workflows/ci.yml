@@ -17,8 +17,10 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      # Pinned so a new ruff release can't turn lint red on its own;
+      # bump deliberately.
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.17.2
 
       - name: Run ruff
         run: ruff check .
