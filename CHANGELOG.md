@@ -3,6 +3,14 @@
 All notable changes to Take Note! are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.10.2] - 2026-10-26
+
+### Fixed
+- The app could crash (abort) when the system was suspended or resumed,
+  after audio outputs changed under PipeWire. The reminder chime's sound
+  player is now created only while a chime is playing instead of being
+  held open for the whole session.
+
 ## [1.10.1] - 2026-07-15
 
 ### Fixed
