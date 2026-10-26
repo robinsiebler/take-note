@@ -186,7 +186,7 @@ def test_fire_reminder_plays_sound_when_enabled():
 
     NoteManager._fire_reminder(manager, note_window)
 
-    manager._reminder_sound.play.assert_called_once()
+    manager._play_reminder_sound.assert_called_once()
 
 
 def test_fire_reminder_does_not_play_sound_when_disabled():
@@ -196,7 +196,7 @@ def test_fire_reminder_does_not_play_sound_when_disabled():
 
     NoteManager._fire_reminder(manager, note_window)
 
-    manager._reminder_sound.play.assert_not_called()
+    manager._play_reminder_sound.assert_not_called()
 
 
 def test_fire_reminder_does_not_flash_for_board_attached_note():

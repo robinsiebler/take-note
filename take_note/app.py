@@ -82,14 +82,9 @@ class NoteManager(QObject):
         self._reminder_timer.timeout.connect(self._check_reminders)
         self._reminder_timer.start()
 
-        # Built once and reused (not a fresh QSoundEffect per fire) — it
-        # must stay alive for its async playback to actually complete, and
-        # loading the same short file over and over would be wasted work.
-        self._reminder_sound = QSoundEffect(self)
-        self._reminder_sound.setSource(
-            QUrl.fromLocalFile(str(Path(__file__).parent / "assets" / "reminder_chime.wav"))
-        )
-        self._reminder_sound.setVolume(0.72)
+        # Created on demand per fire and deleted when playback ends (see
+        # _play_reminder_sound) rather than kept alive for the whole session.
+        self._reminder_sound: QSoundEffect | None = None
 
         self.tray = TrayIcon(self)
         self.tray.show()
@@ -566,8 +561,37 @@ class NoteManager(QObject):
                 REMINDER_FLASH_DURATION_MS, lambda: set_stays_on_top(win_id, False)
             )
         if self.settings.reminder_sound_enabled:
-            self._reminder_sound.play()
+            self._play_reminder_sound()
         self._schedule_save()
+
+    def _play_reminder_sound(self):
+        # A long-lived QSoundEffect holds a Qt audio engine bound to the
+        # output device; when the device list changes (e.g. PipeWire on
+        # suspend/resume) Qt 6.11 tears that engine down and can abort
+        # with a heap double-free inside QRtAudioEngine. Keeping the effect
+        # alive only for the length of the chime avoids having an engine
+        # around at all while the machine sleeps.
+        if self._reminder_sound is not None:
+            return  # already chiming (two reminders due in the same tick)
+        sound = QSoundEffect(self)
+        sound.setSource(
+            QUrl.fromLocalFile(str(Path(__file__).parent / "assets" / "reminder_chime.wav"))
+        )
+        sound.setVolume(0.72)
+
+        def release():
+            if self._reminder_sound is sound:
+                self._reminder_sound = None
+                sound.deleteLater()
+
+        sound.playingChanged.connect(lambda: None if sound.isPlaying() else release())
+        # A failed load never reaches playingChanged; release on error too
+        # so one bad fire doesn't silence every later reminder.
+        sound.statusChanged.connect(
+            lambda: release() if sound.status() == QSoundEffect.Status.Error else None
+        )
+        self._reminder_sound = sound
+        sound.play()
 
     # -- lifecycle ---------------------------------------------------------
 
